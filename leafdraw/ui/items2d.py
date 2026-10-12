@@ -10,7 +10,7 @@ from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QPainter, QPain
 from PySide6.QtWidgets import QGraphicsItem
 
 from leafdraw.core.entities import (Arc, Circle, Dimension, Entity, Hatch, Line, Plant, PlantingArea, Polyline,
-                                    Text)
+                                    SpotHeight, Text)
 from leafdraw.ui import theme
 from leafdraw.ui.symbols import paint_symbol, symbol_bounds, symbol_paths
 
@@ -122,6 +122,13 @@ def entity_path(e: Entity) -> QPainterPath:
         for a, b in e.line_segments():
             path.moveTo(*a)
             path.lineTo(*b)
+    elif isinstance(e, SpotHeight):
+        x, y = e.position
+        s = e.text_height * 0.5
+        path.moveTo(x - s, y)
+        path.lineTo(x + s, y)
+        path.moveTo(x, y - s)
+        path.lineTo(x, y + s)
     return path
 
 
@@ -140,6 +147,9 @@ def entity_fill(e: Entity) -> QPainterPath | None:
         return text_path(e.label(), e.text_height, lay["text_center"], lay["angle"], center=True)
     if isinstance(e, (Hatch, PlantingArea)):
         return loops_path(e.loops)
+    if isinstance(e, SpotHeight):
+        h = e.text_height
+        return text_path(e.label(), h, (e.position[0] + h * 0.6, e.position[1] + h * 0.3))
     return None
 
 
@@ -219,7 +229,7 @@ class EntityItem(QGraphicsItem):
             pad = max(br.width(), br.height(), 1.0) * 0.01
             self._rect = br.adjusted(-pad, -pad, pad, pad)
             self.setPos(0, 0)
-            self.setZValue({"hatch": 0.5, "text": 1.5, "dimension": 1.5}.get(e.kind, 1.0))
+            self.setZValue({"hatch": 0.5, "text": 1.5, "dimension": 1.5, "spot": 1.5}.get(e.kind, 1.0))
         self.setVisible(layer.visible)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, not layer.locked)
         if layer.locked and self.isSelected():

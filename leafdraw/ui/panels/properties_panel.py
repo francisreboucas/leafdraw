@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBo
                                QLineEdit, QMenu, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from leafdraw.core.commands import ReplaceEntities
-from leafdraw.core.entities import (HATCH_PATTERNS, KIND_NAMES, PLANTING_LAYOUTS, Arc, Circle, Dimension, Hatch,
-                                    Line, Plant, PlantingArea, Polyline, Text)
+from leafdraw.core.entities import (HATCH_PATTERNS, KIND_NAMES, PLANTING_LAYOUTS, Arc, Circle, Contour, Dimension,
+                                    Hatch, Line, Plant, PlantingArea, Polyline, SpotHeight, Text)
 from leafdraw.ui.icons import color_icon
 from leafdraw.ui.symbols import species_icon
 
@@ -164,7 +164,18 @@ class PropertiesPanel(QWidget):
         if isinstance(e, Line):
             add("Comprimento", QLabel(fmt(e.length)))
             add("Ângulo", QLabel(f"{e.angle:.1f}°".replace(".", ",")))
+        elif isinstance(e, SpotHeight):
+            z = _spin(e.elevation, -12000, 12000)
+            z.valueChanged.connect(lambda v: self._push([replace(e, elevation=v)], "Cota"))
+            add("Cota", z)
+            th = _spin(e.text_height, maximum=50)
+            th.valueChanged.connect(lambda v: self._push([replace(e, text_height=v)], "Altura do texto"))
+            add("Altura do texto", th)
         elif isinstance(e, Polyline):
+            if isinstance(e, Contour):
+                z = _spin(e.elevation, -12000, 12000)
+                z.valueChanged.connect(lambda v: self._push([replace(e, elevation=v)], "Cota da curva"))
+                add("Cota", z)
             add("Vértices", QLabel(str(len(e.vertices))))
             closed = QCheckBox()
             closed.setChecked(e.closed)

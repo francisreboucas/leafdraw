@@ -17,8 +17,8 @@ from ezdxf import colors as dxfcolors
 from ezdxf import path as dxfpath
 from ezdxf.addons import odafc
 
-from leafdraw.core.entities import (Arc, Circle, Dimension, Entity, Hatch, Line, Plant, Polyline, Text,
-                                    union_bounds)
+from leafdraw.core.entities import (Arc, Circle, Contour, Dimension, Entity, Hatch, Line, Plant, Polyline,
+                                    SpotHeight, Text, union_bounds)
 from leafdraw.core.geom import Affine
 from leafdraw.core.layers import Layer
 
@@ -97,6 +97,8 @@ class DxfImport:
             ne = e.transformed(t)
             if isinstance(ne, Plant):
                 ne = replace(ne, canopy=ne.canopy * factor, height=ne.height * factor)
+            elif isinstance(ne, (Contour, SpotHeight)):  # cotas também estão na unidade do arquivo
+                ne = replace(ne, elevation=ne.elevation * factor)
             out.append(ne)
         return out
 
@@ -169,6 +171,9 @@ class _Importer:
 
     def _line(self, e, base, *_):
         s, en = e.dxf.start, e.dxf.end
+        if abs(s.z) > 1e-9 and abs(s.z - en.z) < 1e-9:  # linha com cota: trecho de curva de nível
+            self.add(Contour(vertices=[(s.x, s.y), (en.x, en.y)], elevation=s.z, **base))
+            return
         self.add(Line(p1=(s.x, s.y), p2=(en.x, en.y), **base))
 
     def _flatten(self, e, base, closed_hint=False):
@@ -199,11 +204,24 @@ class _Importer:
         if self._default_extrusion(e) and all(abs(b) < 1e-12 for _x, _y, b in pts):
             verts = [(x, y) for x, y, _b in pts]
             if len(verts) >= 2:
-                self.add(Polyline(vertices=verts, closed=e.closed and len(verts) >= 3, **base))
+                closed = e.closed and len(verts) >= 3
+                z = e.dxf.get("elevation", 0.0)
+                z = z[2] if isinstance(z, (tuple, list)) or hasattr(z, "z") else z
+                if abs(z) > 1e-9:
+                    self.add(Contour(vertices=verts, closed=closed, elevation=z, **base))
+                else:
+                    self.add(Polyline(vertices=verts, closed=closed, **base))
             return
         self._flatten(e, base, e.closed)
 
     def _polyline(self, e, base, *_):
+        if e.is_3d_polyline:
+            locs = [v.dxf.location for v in e.vertices]
+            zs = [p.z for p in locs]
+            if locs and abs(zs[0]) > 1e-9 and max(zs) - min(zs) < 1e-6:
+                self.add(Contour(vertices=[(p.x, p.y) for p in locs], closed=e.is_closed and len(locs) >= 3,
+                                 elevation=zs[0], **base))
+                return
         if e.is_2d_polyline or e.is_3d_polyline:
             self._flatten(e, base, e.is_closed)
         else:
@@ -341,7 +359,11 @@ class _Importer:
             self.convert(sub, layer_name, base["color"], depth + 1)
 
     def _point(self, e, base, *_):
-        self.skipped["POINT"] += 1
+        p = e.dxf.location
+        if abs(p.z) > 1e-9:
+            self.add(SpotHeight(position=(p.x, p.y), elevation=p.z, **base))
+        else:
+            self.skipped["POINT"] += 1
 
 
 def _native(v):
@@ -415,6 +437,12 @@ def export_dxf(doc, path: str, catalog=None):
 def _export_entity(out, msp, e: Entity, attribs: dict, catalog):
     if isinstance(e, Line):
         msp.add_line(e.p1, e.p2, dxfattribs=attribs)
+    elif isinstance(e, Contour):
+        msp.add_lwpolyline(e.vertices, close=e.closed, dxfattribs={**attribs, "elevation": e.elevation})
+    elif isinstance(e, SpotHeight):
+        x, y = e.position
+        msp.add_point((x, y, e.elevation), dxfattribs=attribs)
+        msp.add_text(e.label(), height=e.text_height, dxfattribs={**attribs, "insert": (x + e.text_height * 0.6, y + e.text_height * 0.3)})
     elif isinstance(e, Polyline):
         msp.add_lwpolyline(e.vertices, close=e.closed, dxfattribs=attribs)
     elif isinstance(e, Circle):

@@ -4,7 +4,7 @@ import pytest
 from leafdraw.core.commands import AddEntities
 from leafdraw.core.document import Document
 from leafdraw.core.dxf_io import export_dxf, import_drawing, read_drawing
-from leafdraw.core.entities import Arc, Circle, Dimension, Hatch, Line, Plant, Polyline, Text
+from leafdraw.core.entities import Arc, Circle, Contour, Dimension, Hatch, Line, Plant, Polyline, SpotHeight, Text
 
 
 def _kinds(entities):
@@ -78,3 +78,33 @@ def test_import_units_and_blocks(tmp_path):
     assert bulged, "polilinha com bulge deve ser discretizada"
     wall = [e for e in got if isinstance(e, Polyline) and len(e.vertices) == 3][0]
     assert wall.vertices[2] == pytest.approx((10, 5))
+
+
+def test_contours_and_spot_heights_roundtrip(tmp_path):
+    doc = Document()
+    doc.undo_stack.push(AddEntities(doc, [Contour(vertices=[(0, 0), (10, 0), (10, 5)], elevation=812.5),
+                                          SpotHeight(position=(3, 3), elevation=813.2)]))
+    path = str(tmp_path / "topo.dxf")
+    export_dxf(doc, path)
+    imp = import_drawing(read_drawing(path))
+    got = imp.finalize(1.0, to_origin=False)
+    contour = [e for e in got if isinstance(e, Contour)][0]
+    spot = [e for e in got if isinstance(e, SpotHeight)][0]
+    assert contour.elevation == pytest.approx(812.5) and len(contour.vertices) == 3
+    assert spot.elevation == pytest.approx(813.2) and spot.position == pytest.approx((3, 3))
+
+
+def test_import_3d_lines_and_points(tmp_path):
+    dwg = ezdxf.new("R2010")
+    m = dwg.modelspace()
+    m.add_line((0, 0, 5), (10, 0, 5))
+    m.add_polyline3d([(0, 1, 6), (5, 1, 6), (10, 2, 6)])
+    m.add_point((2, 2, 7.5))
+    path = str(tmp_path / "t.dxf")
+    dwg.saveas(path)
+    imp = import_drawing(read_drawing(path))
+    got = imp.entities
+    assert sorted(e.elevation for e in got if isinstance(e, Contour)) == [5, 6]
+    assert [e.elevation for e in got if isinstance(e, SpotHeight)] == [7.5]
+    in_cm = imp.finalize(0.01, to_origin=True)
+    assert [e.elevation for e in in_cm if isinstance(e, SpotHeight)] == [pytest.approx(0.075)]

@@ -14,8 +14,8 @@ from PySide6.QtWidgets import QGraphicsPathItem, QGraphicsView, QInputDialog
 
 from leafdraw.core.commands import AddEntities, RemoveEntities, ReplaceEntities
 from leafdraw.core.editing import OFFSET_KINDS, explode_entity, find_boundary, offset_entity
-from leafdraw.core.entities import (HATCH_PATTERNS, PLANTING_LAYOUTS, Arc, Circle, Dimension, Hatch, Line, Plant,
-                                    PlantingArea, Polyline, Text)
+from leafdraw.core.entities import (HATCH_PATTERNS, PLANTING_LAYOUTS, Arc, Circle, Contour, Dimension, Hatch, Line,
+                                    Plant, PlantingArea, Polyline, SpotHeight, Text)
 from leafdraw.core.modify import EXTEND_KINDS, PATH_KINDS, TRIM_KINDS, distribute_along, extend_entity, trim_entity
 from leafdraw.core.geom import Affine, angle_of, arc_from_3_points, nearest_on, point_side
 from leafdraw.ui import theme
@@ -1289,3 +1289,67 @@ class LabelTool(EditTool):
         ents.append(Text(position=(p.x() + h * 0.4, p.y() + h * 0.4), text="\n".join(self._lines()), height=h))
         self.commit(ents, "Rótulo de plantas")
         self.view.request_select()
+
+
+# --- topografia -----------------------------------------------------------
+
+class ContourTool(PolylineTool):
+    """Curva de nível: como a polilinha, com cota. Digite um número para mudar a cota."""
+
+    name = "contour"
+    elevation = 0.0
+    interval = 1.0  # equidistância: a próxima curva sobe esse tanto
+
+    def hint(self):
+        z = fmt(ContourTool.elevation)
+        if not self.points:
+            return (f"Curva de nível (cota {z} m): primeiro vértice "
+                    f"[número = cota; próxima curva +{fmt(ContourTool.interval)} m]")
+        return f"Curva de nível (cota {z} m): próximo vértice [F = fechar] (Enter termina)"
+
+    def expects(self):
+        return "point_value" if not self.points else "point"
+
+    def input_value(self, v):
+        if self.points:
+            return False
+        ContourTool.elevation = v
+        self._hint_changed()
+        return True
+
+    def _commit(self, closed: bool):
+        pts = [_pt(q) for q in self.points]
+        if len(pts) >= (3 if closed else 2):
+            self.commit([Contour(vertices=pts, closed=closed, elevation=ContourTool.elevation)],
+                        f"Curva de nível {fmt(ContourTool.elevation)}")
+            ContourTool.elevation += ContourTool.interval
+        self.reset()
+
+
+class SpotHeightTool(DrawTool):
+    name = "spot"
+    elevation = 0.0
+
+    def hint(self):
+        return f"Cota de nível ({fmt(SpotHeightTool.elevation)} m): clique o ponto [número = cota]"
+
+    def expects(self):
+        return "point_value"
+
+    def base_point(self):
+        return None
+
+    def input_value(self, v):
+        SpotHeightTool.elevation = v
+        self._hint_changed()
+        return True
+
+    def add_point(self, p):
+        self.commit([SpotHeight(position=_pt(p), elevation=SpotHeightTool.elevation)],
+                    f"Cota de nível {fmt(SpotHeightTool.elevation)}")
+
+    def preview_path(self, cursor):
+        sh = SpotHeight(position=_pt(cursor), elevation=SpotHeightTool.elevation)
+        path = entity_path(sh)
+        path.addPath(entity_fill(sh))
+        return path

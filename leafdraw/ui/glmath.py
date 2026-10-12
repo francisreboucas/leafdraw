@@ -90,3 +90,54 @@ def quad():
     """Quadrado unitário em z=0, de -1 a 1, normal +Z."""
     verts = [(-1, -1, 0, 0, 0, 1), (1, -1, 0, 0, 0, 1), (1, 1, 0, 0, 0, 1), (-1, 1, 0, 0, 0, 1)]
     return np.array(verts, "f4"), np.array([0, 1, 2, 0, 2, 3], "u4")
+
+
+def bush(stacks: int = 10, slices: int = 18, seed: int = 7):
+    """Esfera unitária "irregular" (arbustos, copas): raio com ondulações suaves."""
+    verts = []
+    for i in range(stacks + 1):
+        phi = math.pi * i / stacks
+        for j in range(slices + 1):
+            th = 2 * math.pi * j / slices
+            r = 1 + 0.10 * math.sin(3 * th + seed) * math.sin(2 * phi) + 0.06 * math.sin(5 * th + 2 * phi + seed)
+            x, y, z = math.sin(phi) * math.cos(th), math.sin(phi) * math.sin(th), math.cos(phi)
+            verts.append((r * x, r * y, r * z, x, y, z))
+    idx = []
+    row = slices + 1
+    for i in range(stacks):
+        for j in range(slices):
+            a = i * row + j
+            b = a + row
+            idx += [a, b, a + 1, a + 1, b, b + 1]
+    return np.array(verts, "f4"), np.array(idx, "u4")
+
+
+def palm_crown(fronds: int = 11, segments: int = 8):
+    """Copa de palmeira: folhas arqueadas saindo do topo (raio 1, dupla face)."""
+    verts, idx = [], []
+    for k in range(fronds):
+        a = 2 * math.pi * k / fronds + (0.15 if k % 2 else 0.0)
+        ca, sa = math.cos(a), math.sin(a)
+        lift = 0.35 if k % 2 else 0.2
+        base = len(verts)
+        for i in range(segments + 1):
+            t = i / segments
+            r = t
+            z = lift * math.sin(math.pi * t * 0.9) - 0.75 * t * t
+            w = 0.16 * math.sin(math.pi * min(1.0, t * 1.15))
+            px, py = r * ca, r * sa
+            ox, oy = -sa * w, ca * w
+            # normal aproximada: para cima, inclinada conforme a curva
+            dz = lift * 0.9 * math.pi * math.cos(math.pi * t * 0.9) - 1.5 * t
+            n = np.array([-ca * dz, -sa * dz, 1.0])
+            n /= np.linalg.norm(n)
+            verts.append((px + ox, py + oy, z, *n))
+            verts.append((px - ox, py - oy, z, *n))
+        for i in range(segments):
+            a0 = base + 2 * i
+            idx += [a0, a0 + 2, a0 + 1, a0 + 1, a0 + 2, a0 + 3]
+    # face de baixo (normais invertidas)
+    n_up = len(verts)
+    verts += [(x, y, z, -nx, -ny, -nz) for x, y, z, nx, ny, nz in verts]
+    idx += [i + n_up for tri in zip(idx[0::3], idx[2::3], idx[1::3]) for i in tri]
+    return np.array(verts, "f4"), np.array(idx, "u4")

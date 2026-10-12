@@ -557,6 +557,47 @@ class Plant(Entity):
         return replace(self, position=t.apply(self.position))
 
 
+@dataclass(kw_only=True)
+class Contour(Polyline):
+    """Curva de nível: polilinha com cota (m). Alimenta o terreno 3D."""
+
+    kind: ClassVar[str] = "contour"
+
+    elevation: float = 0.0
+
+
+@dataclass(kw_only=True)
+class SpotHeight(Entity):
+    """Cota de nível pontual (ponto cotado)."""
+
+    kind: ClassVar[str] = "spot"
+
+    position: Point = (0.0, 0.0)
+    elevation: float = 0.0
+    text_height: float = 0.25
+
+    def label(self) -> str:
+        sign = "+" if self.elevation >= 0 else "−"
+        return f"{sign}{abs(self.elevation):.2f}".replace(".", ",")
+
+    def snap_points(self):
+        return [(self.position, "center")]
+
+    def bounds(self):
+        x, y = self.position
+        h = self.text_height
+        return (x - h, y - h, x + h * (1 + 0.62 * len(self.label())), y + h * 1.5)
+
+    def grips(self):
+        return [self.position]
+
+    def moved_grip(self, index, p):
+        return replace(self, position=p)
+
+    def transformed(self, t):
+        return replace(self, position=t.apply(self.position), text_height=self.text_height * t.scale)
+
+
 PLANTING_LAYOUTS = {"triangular": "Triangular (quincôncio)", "square": "Quadrado"}
 MAX_PLANTING_POINTS = 200_000
 
@@ -669,7 +710,8 @@ def _planting_points_cached(loops, spacing, layout, angle) -> tuple[Point, ...]:
 
 
 ENTITY_TYPES: dict[str, type[Entity]] = {
-    c.kind: c for c in (Line, Polyline, Circle, Arc, Text, Dimension, Hatch, Plant, PlantingArea)
+    c.kind: c for c in (Line, Polyline, Circle, Arc, Text, Dimension, Hatch, Plant, PlantingArea, Contour,
+                        SpotHeight)
 }
 
 KIND_NAMES = {
@@ -682,4 +724,6 @@ KIND_NAMES = {
     "hatch": "Hachura",
     "plant": "Planta",
     "planting": "Maciço",
+    "contour": "Curva de nível",
+    "spot": "Cota de nível",
 }

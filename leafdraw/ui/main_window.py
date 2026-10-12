@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog
 
 from leafdraw import __version__
 from leafdraw.core.catalog import default_catalog
-from leafdraw.core.commands import AddEntities, RemoveEntities
+from leafdraw.core.commands import AddEntities, RemoveEntities, ReplaceEntities
 from leafdraw.core.document import Document
 from leafdraw.core.dxf_io import dwg_supported, export_dxf, import_drawing, read_drawing
 from leafdraw.core.fileio import EXTENSION, load_document, save_document, used_species
@@ -67,6 +67,8 @@ TOOL_COMMANDS = [
     ToolCommand("extend", "Estender", ("EST", "EXT", "ESTENDER"), T.ExtendTool, "modify"),
     ToolCommand("distance", "Medir distância", ("DI", "MED"), T.DistanceTool, "modify"),
     ToolCommand("label", "Rótulo de plantas", ("ETQ", "ROTULO"), T.LabelTool, "landscape"),
+    ToolCommand("contour", "Curva de nível", ("CN", "CURVA"), T.ContourTool, "landscape"),
+    ToolCommand("spot", "Cota de nível", ("NV", "COTANIVEL"), T.SpotHeightTool, "landscape"),
 ]
 
 # ferramentas que dependem da espécie escolhida no Gerenciador de Objetos
@@ -124,6 +126,9 @@ class MainWindow(QMainWindow):
         self.schedule_panel.exportRequested.connect(self.export_schedule)
         self.schedule_panel.speciesSelected.connect(self.select_species)
         self.composer.openInModel.connect(self._open_region_in_model)
+        self.view3d.picked.connect(self._on_3d_pick)
+        self.view3d.transformRequested.connect(self._apply_3d_transform)
+        v.scene().selectionChanged.connect(lambda: self.view3d.set_selection(v.selected_ids()))
         self.composer.editProjectRequested.connect(self.edit_project)
         self.cmdline.set_prompt(v.tool.hint())
 
@@ -239,6 +244,14 @@ class MainWindow(QMainWindow):
             a = self._action(f"3D: {text}", lambda _c=False, n=name: self.set_camera(n), icon_name=f"cam_{name}")
             self.cam_actions.append(a)
         self.act_ortho = self._action("3D: Projeção ortogonal", self.view3d.set_ortho, checkable=True)
+        self.act_focus3d = self._action("3D: Focar seleção", self.view3d.focus_selection,
+                                        tip="Enquadra a seleção na vista 3D (tecla F na vista 3D)")
+        self.exag_group = QActionGroup(self)
+        for k in (1, 2, 5, 10):
+            a = self._action(f"{k}×", None, checkable=True)
+            a.triggered.connect(lambda _c=False, k=k: self.view3d.set_exaggeration(float(k)))
+            a.setChecked(k == 1)
+            self.exag_group.addAction(a)
 
         self.act_snap_grid = self._action("Snap na grade", lambda v: setattr(self.view2d, "snap_grid", v),
                                           "F9", checkable=True)
@@ -301,6 +314,9 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addActions(self.cam_actions)
         m.addAction(self.act_ortho)
+        m.addAction(self.act_focus3d)
+        em = m.addMenu("3D: Exagero vertical do terreno")
+        em.addActions(self.exag_group.actions())
 
         m = mb.addMenu("&Janelas")
         for dock in (self.layers_dock, self.history_dock, self.catalog_dock, self.props_dock, self.schedule_dock,
@@ -522,7 +538,27 @@ class MainWindow(QMainWindow):
             a.setChecked(True)
 
     def _on_cursor(self, x, y):
-        self.coord_label.setText(f"X: {x:10.3f}   Y: {y:10.3f}".replace(".", ","))
+        text = f"X: {x:10.3f}   Y: {y:10.3f}"
+        z = self.view3d.elevation_at(x, y)
+        if z is not None:
+            text += f"   Z: {z:8.2f}"
+        self.coord_label.setText(text.replace(".", ","))
+
+    def _on_3d_pick(self, eid: str, additive: bool):
+        v = self.view2d
+        if not v.tool.is_select:
+            v.set_tool(T.SelectTool(v))
+        it = v.items_by_id.get(eid)
+        if not additive:
+            v.scene().clearSelection()
+        if it is not None and it.flags() & it.GraphicsItemFlag.ItemIsSelectable:
+            it.setSelected(not it.isSelected() if additive else True)
+
+    def _apply_3d_transform(self, t, text: str):
+        ents = [self.doc.entities[i] for i in self.view2d.selected_ids() if i in self.doc.entities]
+        if ents:
+            self.doc.undo_stack.push(ReplaceEntities(self.doc, [e.transformed(t) for e in ents],
+                                                     f"{text}: {len(ents)} objeto(s)"))
 
     def set_layout(self, name):
         self.tabs.setCurrentIndex(0)

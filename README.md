@@ -25,6 +25,7 @@ leafdraw/
     modify.py      aparar, estender, distribuir ao longo de caminhos
     schedule.py    quantitativos e CSV
     sheets.py      folhas, elementos (janela de vista, carimbo, quadro…) e layout padrão
+    terrain.py     terreno: triangulação, cota em (x, y), linhas e polígonos assentados
     commands.py    AddEntities / RemoveEntities / ReplaceEntities (QUndoCommand)
     catalog.py     catálogo de espécies (resources/catalog.json)
     fileio.py      arquivo .leaf (zip com document.json)
@@ -39,7 +40,10 @@ leafdraw/
     composer.py    aba Folhas: edição das pranchas, PDF e impressão
     render.py      desenho das folhas (mesmo código para tela e PDF)
     project_dialog.py dados do projeto (carimbo)
-    viewport3d.py  vista 3D (moderngl): câmera orbital, plantas por instancing
+    viewport3d.py  vista 3D (moderngl): câmera, seleção por clique, gizmo, envio à GPU
+    scene3d.py     monta a cena 3D em arrays (sem OpenGL)
+    plants3d.py    modelos procedurais de plantas e sombras
+    gizmo3d.py     geometria e detecção do gizmo 3D
     panels/        camadas, Gerenciador de Objetos (catálogo), propriedades, quantitativos
 ```
 
@@ -61,6 +65,7 @@ Enter ou Espaço confirmam; Enter vazio termina a ferramenta ou repete o último
 | Planta isolada, Maciço, Plantas em linha, Rótulo | PLANTA, MAC, LIN, ETQ |
 | Quantitativos, Catálogo de espécies | QUANT, CATALOGO |
 | Aba Folhas / Modelo, PDF das folhas, Dados do projeto | FOLHAS, MODELO, PDF, PROJETO |
+| Curva de nível, Cota de nível | CN, NV |
 | Zoom extensão, Desfazer, Importar/Exportar DXF, Ajuda | Z, U, IMPORTAR/EXPORTAR, ? |
 
 Coordenadas: `10,5` (absoluta), `@3,4` (relativa), `@5<45` (polar), ou um número
@@ -107,6 +112,9 @@ espaçamento; plantas em linha `P` alterna entre "das pontas" e "centralizado".
 | Roda / botão do meio | Zoom e pan (2D) |
 | 3D: arrastar com o botão esquerdo | Orbitar |
 | 3D: botão do meio, direito ou Shift + arrastar | Pan |
+| 3D: clique / Ctrl+clique | Seleciona / acrescenta à seleção (sincronizado com o 2D) |
+| 3D: gizmo | Setas X/Y e quadrado XY movem; o anel gira em torno de Z (Shift: passos de 15°) |
+| 3D: F | Enquadra a seleção |
 
 Seleção por janela: arrastar da esquerda para a direita seleciona só o que
 estiver inteiro dentro; da direita para a esquerda seleciona o que cruzar.
@@ -115,6 +123,20 @@ O botão OBJETO da barra de status tem um menu com os modos de snap
 
 Para inserir plantas, arraste uma espécie do Gerenciador de Objetos para a
 planta, ou dê duplo clique nela e clique no desenho.
+
+## Terreno e 3D
+
+- **Curva de nível** (CN): desenhe como uma polilinha; digite um número antes do 1º
+  vértice para definir a cota. A cada curva concluída a cota sobe 1 m.
+  **Cota de nível** (NV): pontos cotados.
+- O terreno 3D é uma triangulação (TIN) de todas as curvas e cotas visíveis. Plantas,
+  linhas, hachuras e maciços se assentam sobre ele; fora da área levantada o chão é plano
+  na cota mais baixa. O Z do terreno sob o cursor aparece na barra de status.
+- Vistas → "3D: Exagero vertical do terreno" (1×, 2×, 5×, 10×).
+- Na importação DXF, LWPOLYLINE com elevação, POLYLINE 3D de cota constante e LINE com Z
+  viram curvas de nível; POINT com Z vira cota de nível.
+- Plantas 3D procedurais: copas irregulares, palmeiras com folhas, arbustos orgânicos,
+  variação natural de tamanho/cor/rotação e sombras difusas no chão.
 
 ## Folhas de impressão
 
@@ -154,4 +176,4 @@ DWG funciona se o [ODA File Converter](https://www.opendesign.com/guestfiles/oda
 2. **CAD 2D** (feito): arco, texto, cota, hachura, snaps, linha de comando, edição, DXF/DWG
 3. **Paisagismo** (feito): maciços, plantas em linha, rótulos, quantitativos, catálogo editável, aparar/estender, grips
 4. **Folhas** (feito): pranchas A0–A4, janelas de vista 2D/3D em escala, carimbo, quadro de vegetação, norte, escala gráfica, PDF e impressão
-5. 3D: picking, gizmos 3D, terreno, modelos melhores de plantas
+5. **3D avançado** (feito): seleção por clique, gizmo 3D, terreno por curvas/cotas de nível, plantas procedurais e sombras

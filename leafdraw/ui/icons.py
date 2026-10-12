@@ -194,6 +194,18 @@ def icon(name: str) -> QIcon:
         for y in (20, 32, 44):
             p.drawLine(8, y, 56, y)
         p.drawLine(24, 8, 24, 56)
+    elif name == "contour":
+        p.setPen(QPen(QColor("#c89a6a"), 3))
+        for r in (26, 18, 10):
+            p.drawEllipse(QPointF(32, 34), r * 1.15, r * 0.8)
+    elif name == "spot":
+        p.drawLine(10, 40, 26, 40)
+        p.drawLine(18, 32, 18, 48)
+        f = p.font()
+        f.setPixelSize(18)
+        f.setBold(True)
+        p.setFont(f)
+        p.drawText(QRectF(26, 14, 38, 28), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "+1,5")
     elif name in ("import", "export"):
         p.drawRect(QRectF(8, 36, 48, 20))
         y0, y1 = (6, 30) if name == "import" else (30, 6)
