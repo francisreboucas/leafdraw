@@ -49,6 +49,8 @@ leafdraw/
     schedule.py    quantitativos e CSV
     sheets.py      folhas, elementos (janela de vista, carimbo, quadro…) e layout padrão
     terrain.py     terreno: triangulação, cota em (x, y), linhas e polígonos assentados
+    elevation.py   vistas (elevações): silhuetas de frente das espécies e montagem da vista
+    symbol_blocks.py blocos DXF/DWG como desenho próprio (versão Planta ou Vista) de uma espécie
     commands.py    AddEntities / RemoveEntities / ReplaceEntities (QUndoCommand)
     catalog.py     catálogo de espécies (resources/catalog.json)
     fileio.py      arquivo .leaf (zip com document.json)
@@ -89,6 +91,7 @@ Enter ou Espaço confirmam; Enter vazio termina a ferramenta ou repete o último
 | Quantitativos, Catálogo de espécies | QUANT, CATALOGO |
 | Aba Folhas / Modelo, PDF das folhas, Dados do projeto | FOLHAS, MODELO, PDF, PROJETO |
 | Curva de nível, Cota de nível | CN, NV |
+| Vista (elevação) | VISTA, VI, ELEV |
 | Zoom extensão, Desfazer, Importar/Exportar DXF, Ajuda | Z, U, IMPORTAR/EXPORTAR, ? |
 
 Coordenadas: `10,5` (absoluta), `@3,4` (relativa), `@5<45` (polar), ou um número
@@ -160,6 +163,27 @@ planta, ou dê duplo clique nela e clique no desenho.
   viram curvas de nível; POINT com Z vira cota de nível.
 - Plantas 3D procedurais: copas irregulares, palmeiras com folhas, arbustos orgânicos,
   variação natural de tamanho/cor/rotação e sombras difusas no chão.
+
+## Vistas (elevações)
+
+Cada espécie do Gerenciador de Objetos tem duas versões, mostradas lado a lado abaixo da
+lista: **Planta** (o símbolo visto de cima) e **Vista** (a silhueta de frente).
+
+- Sem bloco próprio, as duas versões são geradas pelo tipo de símbolo (árvore, palmeira,
+  arbusto, forração), pela altura e pela copa.
+- No **Catálogo de espécies**, "Importar bloco…" troca a Planta ou a Vista por um bloco de um
+  DXF/DWG seu (ou pelo desenho inteiro do arquivo). A Planta é ajustada ao diâmetro da copa;
+  a Vista, à copa (largura) e à altura, com a base do bloco no chão. "Automático" volta ao
+  desenho gerado. Os blocos vão junto com a espécie no `.leaf`.
+- **Vista** (VISTA): clique os dois pontos da linha de corte, depois o lado para onde a vista
+  olha (digite um número para mudar a profundidade; 0 = sem limite) e, por fim, onde fica o
+  desenho. Entram as plantas isoladas e as mudas de maciço à frente da linha, dentro da
+  profundidade, cada uma apoiada no terreno; as mais distantes saem mais claras.
+- A vista é **associativa**: mover, trocar ou apagar plantas e mudar o terreno refaz o desenho.
+  Em Propriedades: nome, lado ("Olhar para o outro lado"), profundidade, cota da base e altura
+  do texto. Mover/copiar a vista desloca só o desenho; a linha de corte se ajusta pelos grips
+  (pontas e meio). Para levá-la a uma prancha, enquadre o desenho numa janela de vista 2D.
+- Na exportação DXF/DWG a vista sai como linhas, polilinhas e textos comuns.
 
 ## Folhas de impressão
 

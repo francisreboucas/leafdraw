@@ -6,13 +6,13 @@ from dataclasses import replace
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QLabel,
-                               QLineEdit, QMenu, QSpinBox, QToolButton, QVBoxLayout, QWidget)
+                               QLineEdit, QMenu, QPushButton, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from leafdraw.core.commands import ReplaceEntities
 from leafdraw.core.entities import (HATCH_PATTERNS, KIND_NAMES, PLANTING_LAYOUTS, Arc, Circle, Contour, Dimension,
-                                    Hatch, Line, Plant, PlantingArea, Polyline, SpotHeight, Text)
+                                    ElevationView, Hatch, Line, Plant, PlantingArea, Polyline, SpotHeight, Text)
 from leafdraw.ui.icons import color_icon
-from leafdraw.ui.symbols import species_icon
+from leafdraw.ui.symbols import sp_icon
 
 
 def fmt(v: float, unit: str = "m") -> str:
@@ -141,7 +141,7 @@ class PropertiesPanel(QWidget):
         combo = QComboBox()
         species = sorted(self.catalog.all(), key=lambda s: s.nome_popular)
         for sp in species:
-            combo.addItem(species_icon(sp.simbolo, sp.cor), sp.nome_popular, sp.id)
+            combo.addItem(sp_icon(sp), sp.nome_popular, sp.id)
         common = {e.species for e in ents}
         ids = [sp.id for sp in species]
         if len(common) == 1 and next(iter(common)) in ids:
@@ -164,6 +164,30 @@ class PropertiesPanel(QWidget):
         if isinstance(e, Line):
             add("Comprimento", QLabel(fmt(e.length)))
             add("Ângulo", QLabel(f"{e.angle:.1f}°".replace(".", ",")))
+        elif isinstance(e, ElevationView):
+            name = QLineEdit(e.name)
+            name.editingFinished.connect(
+                lambda: name.text().strip() and self._push([replace(e, name=name.text().strip())], "Nome da vista"))
+            add("Nome", name)
+            flip = QPushButton("Olhar para o outro lado")
+            flip.clicked.connect(lambda: self._push([replace(e, side=-e.side)], "Inverter vista"))
+            add("Lado", flip)
+            depth = _spin(e.depth, 0.0, 10_000)
+            depth.setSpecialValueText("sem limite")
+            depth.valueChanged.connect(lambda v: self._push([replace(e, depth=v)], "Profundidade da vista"))
+            add("Profundidade", depth)
+            datum = _spin(e.datum, -12000, 12000)
+            datum.setToolTip("Cota que fica na base do desenho")
+            datum.valueChanged.connect(lambda v: self._push([replace(e, datum=v)], "Cota de referência"))
+            add("Cota da base", datum)
+            th = _spin(e.text_height, maximum=50)
+            th.valueChanged.connect(lambda v: self._push([replace(e, text_height=v)], "Altura do texto"))
+            add("Altura do texto", th)
+            add("Comprimento", QLabel(fmt(e.length)))
+            item = self.view.items_by_id.get(e.id)
+            data = getattr(item, "_data", None)
+            if data is not None:
+                add("Plantas na vista", QLabel(str(len(data.plants))))
         elif isinstance(e, SpotHeight):
             z = _spin(e.elevation, -12000, 12000)
             z.valueChanged.connect(lambda v: self._push([replace(e, elevation=v)], "Cota"))

@@ -666,6 +666,62 @@ class PlantingArea(Entity):
                        angle=norm_angle(t.map_angle(self.angle)))
 
 
+@dataclass(kw_only=True)
+class ElevationView(Entity):
+    """Vista de frente (elevação) associativa, gerada a partir de uma linha de corte na planta.
+
+    O desenho fica em ``origin`` (canto inferior esquerdo, na cota ``datum``) e mostra as
+    plantas à frente da linha, até ``depth`` metros (0 = sem limite), do lado ``side``
+    (+1 = à esquerda de p1→p2). Mover/copiar desloca só o desenho; a linha de corte é
+    editada pelos grips.
+    """
+
+    kind: ClassVar[str] = "elevation"
+
+    p1: Point = (0.0, 0.0)
+    p2: Point = (10.0, 0.0)
+    side: int = 1
+    depth: float = 20.0
+    origin: Point = (0.0, -20.0)
+    datum: float = 0.0
+    name: str = "A"
+    text_height: float = 0.5
+    extent: float = 10.0  # altura aproximada do desenho (m), para limites e zoom
+
+    @property
+    def length(self) -> float:
+        return math.dist(self.p1, self.p2)
+
+    def primitives(self):
+        return [Seg(self.p1, self.p2)]
+
+    def snap_points(self):
+        return [(self.p1, "end"), (self.p2, "end"), (self.origin, "end")]
+
+    def bounds(self):
+        ox, oy = self.origin
+        h = self.text_height
+        return _bounds([self.p1, self.p2, (ox, oy - h * 4), (ox + self.length, oy + self.extent)])
+
+    def grips(self):
+        return [self.p1, self.p2, _mid(self.p1, self.p2), self.origin]
+
+    def moved_grip(self, index, p):
+        if index == 0:
+            return replace(self, p1=p) if math.dist(p, self.p2) > 1e-6 else None
+        if index == 1:
+            return replace(self, p2=p) if math.dist(p, self.p1) > 1e-6 else None
+        if index == 2:
+            m = _mid(self.p1, self.p2)
+            dx, dy = p[0] - m[0], p[1] - m[1]
+            return replace(self, p1=(self.p1[0] + dx, self.p1[1] + dy), p2=(self.p2[0] + dx, self.p2[1] + dy))
+        return replace(self, origin=p)
+
+    def transformed(self, t):
+        # a linha de corte define o conteúdo; transformações reposicionam só o desenho
+        return replace(self, origin=t.apply(self.origin))
+
+
 def _planting_points(loops, spacing: float, layout: str, angle: float) -> tuple[Point, ...]:
     return _planting_points_cached(loops, round(spacing, 9), layout, round(angle, 9))
 
@@ -711,7 +767,7 @@ def _planting_points_cached(loops, spacing, layout, angle) -> tuple[Point, ...]:
 
 ENTITY_TYPES: dict[str, type[Entity]] = {
     c.kind: c for c in (Line, Polyline, Circle, Arc, Text, Dimension, Hatch, Plant, PlantingArea, Contour,
-                        SpotHeight)
+                        SpotHeight, ElevationView)
 }
 
 KIND_NAMES = {
@@ -726,4 +782,5 @@ KIND_NAMES = {
     "planting": "Maciço",
     "contour": "Curva de nível",
     "spot": "Cota de nível",
+    "elevation": "Vista (elevação)",
 }

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
 from leafdraw.core.commands import AddEntities
 from leafdraw.core.coords import direct_distance, parse_input
-from leafdraw.core.entities import Plant, union_bounds
+from leafdraw.core.entities import Contour, ElevationView, Plant, PlantingArea, SpotHeight, union_bounds
 from leafdraw.core.geom import intersections, nearest_on, perpendicular_feet
 from leafdraw.ui import theme
 from leafdraw.ui.items2d import PICK_TOLERANCE_PX, EntityItem, MoveGizmo, SnapMarker, cosmetic_pen
@@ -25,6 +25,8 @@ GRID_STEPS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 50
 GRID_MIN_PX = 14
 SNAP_PX = 10
 ZOOM_RANGE = (0.05, 20_000.0)  # px por metro; abaixo disso a cena (100 km) quase cabe na tela e o zoom não ancora
+# entidades que alteram o conteúdo das vistas (elevações)
+ELEVATION_SOURCES = (Plant, PlantingArea, Contour, SpotHeight)
 SNAP_MODES = ("end", "mid", "center", "quad", "int", "perp", "near")
 DEFAULT_SNAP_MODES = {"end", "mid", "center", "quad", "int", "perp"}
 MAX_SNAP_PRIMITIVES = 60
@@ -90,6 +92,7 @@ class Viewport2D(QGraphicsView):
         self.snap_marker.hide()
         scene.addItem(self.snap_marker)
 
+        self._elevations_pending = False
         self.tool: Tool | None = None
         self.set_tool(SelectTool(self))
 
@@ -112,22 +115,39 @@ class Viewport2D(QGraphicsView):
         self.update_gizmo()
 
     def _on_added(self, eid):
-        it = EntityItem(self, self.doc.entities[eid])
+        e = self.doc.entities[eid]
+        it = EntityItem(self, e)
         self.scene().addItem(it)
         self.items_by_id[eid] = it
+        self._elevation_source_changed(e)
 
     def _on_removed(self, eid):
         it = self.items_by_id.pop(eid, None)
         if it is not None:
             self._snap_excluded.discard(it)
             self.scene().removeItem(it)
+            self._elevation_source_changed(it.entity)
 
     def _on_changed(self, eid):
         it = self.items_by_id.get(eid)
         if it is not None:
+            old = it.entity
             it.set_entity(self.doc.entities[eid])
             if it.isSelected():
                 self.update_gizmo()
+            self._elevation_source_changed(old)
+
+    def _elevation_source_changed(self, e):
+        """Plantas e terreno mudaram: as vistas são refeitas uma vez, no fim do lote de alterações."""
+        if isinstance(e, ELEVATION_SOURCES) and not self._elevations_pending:
+            self._elevations_pending = True
+            QTimer.singleShot(0, self.refresh_elevations)
+
+    def refresh_elevations(self):
+        self._elevations_pending = False
+        for it in self.items_by_id.values():
+            if isinstance(it.entity, ElevationView):
+                it.refresh()
 
     def refresh_items(self):
         """Redesenha tudo (mudou camada, catálogo…)."""

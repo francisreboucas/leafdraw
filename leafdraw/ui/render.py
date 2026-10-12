@@ -13,12 +13,13 @@ from typing import Callable
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QImage, QPainter, QPainterPath, QPen, QPolygonF
 
-from leafdraw.core.entities import Dimension, Hatch, Plant, PlantingArea, Text
+from leafdraw.core.entities import Dimension, ElevationView, Hatch, Plant, PlantingArea, Text
 from leafdraw.core.schedule import area_schedule, plant_schedule
 from leafdraw.core.sheets import (NorthElement, PlantTableElement, ScaleBarElement, Sheet, SheetElement,
                                   TextElement, TitleBlockElement, ViewportElement, nice_bar_length)
-from leafdraw.ui.items2d import TEXT_FONT, entity_fill, entity_path, hatch_brush, loops_path, planting_dots
-from leafdraw.ui.symbols import paint_symbol
+from leafdraw.ui.items2d import (TEXT_FONT, elevation_data, entity_fill, entity_path, hatch_brush, loops_path,
+                                 paint_elevation, planting_dots)
+from leafdraw.ui.symbols import paint_symbol, plan_args
 
 BLACK = QColor(0, 0, 0)
 GREY = QColor(110, 110, 110)
@@ -150,6 +151,11 @@ def draw_viewport(painter: QPainter, vp: ViewportElement, ctx: RenderContext):
             layer = doc.layer_for(e)
             if not layer.visible or layer.id in hidden:
                 continue
+            if isinstance(e, ElevationView):  # o tamanho do desenho só se sabe depois de montá-lo
+                paint_elevation(painter, e, elevation_data(doc, ctx.catalog, e),
+                                print_color(e.color or layer.color), lw=max(layer.lineweight, MIN_LW) / k,
+                                print_mode=True)
+                continue
             b = e.bounds()
             if b[2] < x0 or b[0] > x1 or b[3] < y0 or b[1] > y1:
                 continue
@@ -179,8 +185,9 @@ def draw_model_entity(painter: QPainter, e, layer, catalog, k: float):
         sp = catalog.get(e.species)
         painter.save()
         painter.translate(*e.position)
-        paint_symbol(painter, sp.simbolo if sp else "arvore", e.canopy / 2, QColor(e.color or (sp.cor if sp else "#6cc070")),
-                     pen_width=0.13 / k)
+        simbolo, drawing = plan_args(sp)
+        paint_symbol(painter, simbolo, e.canopy / 2, QColor(e.color or (sp.cor if sp else "#6cc070")),
+                     pen_width=0.13 / k, drawing=drawing)
         painter.restore()
     elif isinstance(e, PlantingArea):
         sp = catalog.get(e.species)
@@ -301,7 +308,8 @@ def draw_plant_table(painter: QPainter | None, el: PlantTableElement, ctx: Rende
         if sp is not None:
             painter.save()
             painter.translate((xs[0] + xs[1]) / 2, y + rh / 2)
-            paint_symbol(painter, sp.simbolo, rh * 0.38, QColor(sp.cor), pen_width=0.1)
+            painter.scale(1, -1)  # símbolos estão com Y para cima
+            paint_symbol(painter, sp.simbolo, rh * 0.38, QColor(sp.cor), pen_width=0.1, drawing=sp.desenho_planta)
             painter.restore()
         base = y + rh * 0.68
         draw_text(painter, xs[1] + 1.2, base, r.nome_popular, th, max_w=xs[2] - xs[1] - 2)

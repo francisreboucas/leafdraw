@@ -7,6 +7,7 @@ digitada na linha de comando chega por ``input_point``/``input_value``/``input_t
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt
 from PySide6.QtGui import QPainterPath, QTransform
@@ -14,13 +15,15 @@ from PySide6.QtWidgets import QGraphicsPathItem, QGraphicsView, QInputDialog
 
 from leafdraw.core.commands import AddEntities, RemoveEntities, ReplaceEntities
 from leafdraw.core.editing import OFFSET_KINDS, explode_entity, find_boundary, offset_entity
-from leafdraw.core.entities import (HATCH_PATTERNS, PLANTING_LAYOUTS, Arc, Circle, Contour, Dimension, Hatch, Line,
-                                    Plant, PlantingArea, Polyline, SpotHeight, Text)
+from leafdraw.core.elevation import frame, marker_geometry
+from leafdraw.core.entities import (HATCH_PATTERNS, PLANTING_LAYOUTS, Arc, Circle, Contour, Dimension, ElevationView,
+                                    Hatch, Line, Plant, PlantingArea, Polyline, SpotHeight, Text)
 from leafdraw.core.modify import EXTEND_KINDS, PATH_KINDS, TRIM_KINDS, distribute_along, extend_entity, trim_entity
 from leafdraw.core.geom import Affine, angle_of, arc_from_3_points, nearest_on, point_side
 from leafdraw.ui import theme
-from leafdraw.ui.items2d import EntityItem, add_arc, cosmetic_pen, entity_fill, entity_path
-from leafdraw.ui.symbols import symbol_paths
+from leafdraw.ui.items2d import (EntityItem, add_arc, cosmetic_pen, elevation_box, elevation_data, entity_fill,
+                                 entity_path)
+from leafdraw.ui.symbols import plan_args, shape_path, symbol_paths
 
 MIN_SIZE = 1e-6
 NO_DRAG = QGraphicsView.DragMode.NoDrag
@@ -245,7 +248,8 @@ def preview_shape(e, catalog) -> QPainterPath:
     """Contorno de uma entidade (ainda não desenhada) para prévias."""
     if isinstance(e, Plant):
         sp = catalog.get(e.species)
-        outline, _ = symbol_paths(sp.simbolo if sp else "arvore", e.canopy / 2)
+        simbolo, drawing = plan_args(sp)
+        outline, _ = symbol_paths(simbolo, e.canopy / 2, drawing)
         return outline.translated(*e.position)
     path = entity_path(e)
     fill = entity_fill(e)
@@ -258,7 +262,7 @@ def boundary_at(view, p: QPointF):
     """Contorno fechado (com furos) em volta de ``p``, a partir do que está visível."""
     view_rect = view.mapToScene(view.viewport().rect()).boundingRect()
     cands = [it.entity for it in view.items_by_id.values()
-             if it.isVisible() and not isinstance(it.entity, (Plant, Text, Hatch, PlantingArea))
+             if it.isVisible() and not isinstance(it.entity, (Plant, Text, Hatch, PlantingArea, ElevationView))
              and it.sceneBoundingRect().intersects(view_rect)]
     return find_boundary(cands, _pt(p))
 
@@ -268,7 +272,7 @@ def _cutting_entities(view, rect: QRectF, exclude) -> list:
     prims = []
     for it in view.scene().items(rect):
         if (isinstance(it, EntityItem) and it is not exclude and it.isVisible()
-                and not isinstance(it.entity, (Plant, Text, Hatch, PlantingArea, Dimension))):
+                and not isinstance(it.entity, (Plant, Text, Hatch, PlantingArea, Dimension, ElevationView))):
             prims += it.entity.primitives()
     return prims
 
@@ -666,7 +670,7 @@ class PlantTool(DrawTool):
         self.view.place_plant(self.species.id, p)
 
     def preview_path(self, cursor):
-        outline, details = symbol_paths(self.species.simbolo, self.species.copa / 2)
+        outline, details = symbol_paths(self.species.simbolo, self.species.copa / 2, self.species.desenho_planta)
         path = QPainterPath(outline)
         path.addPath(details)
         return path.translated(cursor)
@@ -1147,7 +1151,7 @@ class PlantRowTool(DrawTool):
         if self.preview is None:
             return
         path = QPainterPath()
-        outline, _ = symbol_paths(self.species.simbolo, self.species.copa / 2)
+        outline, _ = symbol_paths(self.species.simbolo, self.species.copa / 2, self.species.desenho_planta)
         for x, y in self._positions():
             path.addPath(outline.translated(x, y))
         self.preview.setPath(path)
@@ -1353,3 +1357,129 @@ class SpotHeightTool(DrawTool):
         path = entity_path(sh)
         path.addPath(entity_fill(sh))
         return path
+
+
+def next_view_name(doc) -> str:
+    used = {e.name for e in doc.entities.values() if isinstance(e, ElevationView)}
+    letters = [chr(c) for c in range(ord("A"), ord("Z") + 1)]
+    return next((n for n in letters if n not in used),
+                next(f"V{i}" for i in range(1, len(used) + 2) if f"V{i}" not in used))
+
+
+class ElevationTool(DrawTool):
+    """Vista de frente: linha de corte, lado para onde olha (e profundidade) e posição do desenho."""
+
+    name = "elevation"
+    depth = 20.0
+
+    def __init__(self, view):
+        super().__init__(view)
+        self.side = 1
+        self._ghost = QPainterPath()
+        self._ev: ElevationView | None = None
+
+    def hint(self):
+        n = len(self.points)
+        if n == 0:
+            return "Vista: primeiro ponto da linha de corte"
+        if n == 1:
+            return "Vista: segundo ponto da linha de corte"
+        if n == 2:
+            d = "sem limite" if ElevationTool.depth <= 0 else f"{fmt(ElevationTool.depth)} m"
+            return f"Vista: clique do lado para onde a vista olha [profundidade {d}; número = profundidade, 0 = sem limite]"
+        return "Vista: clique onde colocar o desenho (canto inferior esquerdo)"
+
+    def expects(self):
+        return "point_value" if len(self.points) == 2 else "point"
+
+    def base_point(self):
+        return self.points[0] if len(self.points) == 1 else None
+
+    def input_value(self, v):
+        if len(self.points) != 2:
+            return False
+        ElevationTool.depth = max(0.0, v)
+        self._hint_changed()
+        self.refresh_preview()
+        return True
+
+    def _side_of(self, p: QPointF) -> int:
+        return 1 if point_side(_pt(self.points[0]), _pt(self.points[1]), _pt(p)) >= 0 else -1
+
+    def _base_view(self, side: int) -> ElevationView:
+        p1, p2 = _pt(self.points[0]), _pt(self.points[1])
+        L = math.dist(p1, p2)
+        th = max(0.25, round(L / 50 / 0.05) * 0.05)
+        return ElevationView(p1=p1, p2=p2, side=side, depth=ElevationTool.depth, origin=(0.0, 0.0),
+                             name=next_view_name(self.doc), text_height=th)
+
+    def add_point(self, p):
+        n = len(self.points)
+        if n < 2:
+            if n == 1 and QLineF(self.points[0], p).length() < MIN_SIZE:
+                return
+            self.points.append(p)
+            return
+        if n == 2:
+            self.side = self._side_of(p)
+            ev = self._base_view(self.side)
+            data = elevation_data(self.doc, self.view.catalog, ev)
+            low = min(q[1] for q in data.profile)
+            ev = replace(ev, datum=low)  # o ponto mais baixo do perfil fica na base do desenho
+            data = elevation_data(self.doc, self.view.catalog, ev)
+            b = data.bounds()
+            self._ev = replace(ev, extent=(b[3] - b[1]) if b else 10.0)
+            ghost = QPainterPath()
+            if data.profile:
+                ghost.moveTo(*data.profile[0])
+                for q in data.profile[1:]:
+                    ghost.lineTo(*q)
+            for pl in data.plants[-400:]:  # prévia leve: só as mais próximas
+                for sh in pl.shapes:
+                    if sh.closed:
+                        ghost.addPath(shape_path(sh))
+            ghost.addPath(elevation_box(self._ev, data))
+            self._ghost = ghost
+            self.points.append(p)
+            return
+        ev = replace(self._ev, origin=_pt(p))
+        self.commit([ev], f"Vista {ev.name}")
+        n_plants = len(elevation_data(self.doc, self.view.catalog, ev).plants)
+        self.message(f"Vista {ev.name}: {n_plants} planta(s). Ajuste lado, profundidade e cota em Propriedades.")
+        self.reset()
+
+    def preview_path(self, cursor):
+        n = len(self.points)
+        path = QPainterPath()
+        if n == 0:
+            return path
+        if n == 1:
+            path.moveTo(self.points[0])
+            path.lineTo(cursor)
+            return path
+        side = self._side_of(cursor) if n == 2 else self.side
+        ev = self._base_view(side) if n == 2 else self._ev
+        mk = marker_geometry(ev)
+        path.moveTo(*ev.p1)
+        path.lineTo(*ev.p2)
+        for a, tip, b in mk["arrows"]:
+            path.moveTo(*a)
+            path.lineTo(*tip)
+            path.lineTo(*b)
+        if n == 2 and ElevationTool.depth > 0:  # faixa que entra na vista
+            u, nn, _L = frame(ev)
+            d = ElevationTool.depth
+            far1 = (ev.p1[0] + nn[0] * d, ev.p1[1] + nn[1] * d)
+            far2 = (ev.p2[0] + nn[0] * d, ev.p2[1] + nn[1] * d)
+            path.moveTo(*ev.p1)
+            path.lineTo(*far1)
+            path.lineTo(*far2)
+            path.lineTo(*ev.p2)
+        if n == 3:
+            path.addPath(self._ghost.translated(cursor))
+        return path
+
+    def reset(self):
+        self._ev = None
+        self._ghost = QPainterPath()
+        super().reset()

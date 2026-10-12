@@ -206,6 +206,15 @@ def icon(name: str) -> QIcon:
         f.setBold(True)
         p.setFont(f)
         p.drawText(QRectF(26, 14, 38, 28), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "+1,5")
+    elif name == "elevation":
+        p.setPen(QPen(theme.ICON, 3))
+        p.drawLine(4, 56, 60, 56)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(QColor("#7a5a3c")))
+        p.drawRect(QRectF(19, 36, 5, 20))
+        p.setBrush(QBrush(QColor("#6cc070")))
+        p.drawEllipse(QPointF(21.5, 26), 14, 14)
+        p.drawEllipse(QPointF(47, 48), 11, 8)
     elif name in ("import", "export"):
         p.drawRect(QRectF(8, 36, 48, 20))
         y0, y1 = (6, 30) if name == "import" else (30, 6)

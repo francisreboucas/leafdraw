@@ -19,10 +19,12 @@ from ezdxf import colors as dxfcolors
 from ezdxf import path as dxfpath
 from ezdxf.addons import odafc
 
-from leafdraw.core.entities import (Arc, Circle, Contour, Dimension, Entity, Hatch, Line, Plant, Polyline,
-                                    SpotHeight, Text, union_bounds)
+from leafdraw.core.entities import (Arc, Circle, Contour, Dimension, ElevationView, Entity, Hatch, Line, Plant,
+                                    Polyline, SpotHeight, Text, union_bounds)
+from leafdraw.core.elevation import compute_elevation, marker_geometry, title_position
 from leafdraw.core.geom import Affine
 from leafdraw.core.layers import Layer
+from leafdraw.core.terrain import document_terrain
 
 # $INSUNITS -> metros
 UNIT_FACTORS = {1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1.0, 14: 0.1}
@@ -447,6 +449,10 @@ def export_dxf(doc, path: str, catalog=None):
         attribs = {"layer": names.get(layer.id, "0")}
         if e.color:
             attribs["true_color"] = dxfcolors.rgb2int(_rgb(e.color))
+        if isinstance(e, ElevationView):
+            if catalog is not None:
+                _export_elevation(msp, e, attribs, doc, catalog)
+            continue
         _export_entity(out, msp, e, attribs, catalog)
     if Path(path).suffix.lower() == ".dwg":
         if not dwg_supported():
@@ -506,3 +512,26 @@ def _export_entity(out, msp, e: Entity, attribs: dict, catalog):
             blk.add_line((0, -0.12), (0, 0.12))
         r = e.canopy / 2
         msp.add_blockref(name, e.position, dxfattribs={**attribs, "xscale": r, "yscale": r, "zscale": e.height})
+
+
+def _export_elevation(msp, ev: ElevationView, attribs: dict, doc, catalog):
+    """A vista sai como geometria comum: marca de corte, perfil, silhuetas e título."""
+    data = compute_elevation(ev, doc.entities.values(), lambda e: doc.layer_for(e).visible, catalog,
+                             document_terrain(doc))
+    h = ev.text_height
+    mk = marker_geometry(ev)
+    msp.add_line(ev.p1, ev.p2, dxfattribs=attribs)
+    for a, tip, b in mk["arrows"]:
+        msp.add_solid([a, tip, b], dxfattribs=attribs)
+    for pos in mk["labels"]:
+        msp.add_text(ev.name, height=h, dxfattribs={**attribs, "insert": pos})
+    for pl in data.plants:
+        color = dxfcolors.rgb2int(_rgb(pl.color))
+        for sh in pl.shapes:
+            att = {**attribs, "true_color": color} if sh.fill == "folha" else attribs
+            msp.add_lwpolyline(sh.pts, close=sh.closed, dxfattribs=att)
+    if data.profile:
+        msp.add_lwpolyline(data.profile, dxfattribs={**attribs, "const_width": h * 0.08})
+    tx, ty = title_position(ev, data)
+    msp.add_text(f"VISTA {ev.name}", height=h, dxfattribs={**attribs, "insert": (tx, ty), "halign": 1,
+                                                            "align_point": (tx, ty)})

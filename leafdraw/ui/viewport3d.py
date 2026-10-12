@@ -15,7 +15,7 @@ from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-from leafdraw.core.entities import Contour, SpotHeight, union_bounds
+from leafdraw.core.entities import Contour, ElevationView, SpotHeight, union_bounds
 from leafdraw.core.geom import Affine
 from leafdraw.core.terrain import Terrain
 from leafdraw.ui import glmath
@@ -266,6 +266,7 @@ class Viewport3D(QOpenGLWidget):
 
     def zoom_extents(self, ids=None):
         ents = [self.doc.entities[i] for i in ids if i in self.doc.entities] if ids else list(self.doc.entities.values())
+        ents = [e for e in ents if not isinstance(e, ElevationView)]  # o desenho da vista não existe no 3D
         b = union_bounds(e.bounds() for e in ents)
         zm = self.zmap()
         if b is None:

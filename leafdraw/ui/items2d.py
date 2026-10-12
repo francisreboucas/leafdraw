@@ -9,10 +9,12 @@ from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QPainter, QPain
                            QPen, QPixmap, QPolygonF, QTransform)
 from PySide6.QtWidgets import QGraphicsItem
 
-from leafdraw.core.entities import (Arc, Circle, Dimension, Entity, Hatch, Line, Plant, PlantingArea, Polyline,
-                                    SpotHeight, Text)
+from leafdraw.core.elevation import compute_elevation, marker_geometry, title_position
+from leafdraw.core.entities import (Arc, Circle, Dimension, ElevationView, Entity, Hatch, Line, Plant, PlantingArea,
+                                    Polyline, SpotHeight, Text)
+from leafdraw.core.terrain import document_terrain
 from leafdraw.ui import theme
-from leafdraw.ui.symbols import paint_symbol, symbol_bounds, symbol_paths
+from leafdraw.ui.symbols import paint_shapes, paint_symbol, plan_args, symbol_bounds, symbol_paths
 
 PICK_TOLERANCE_PX = 6
 MAX_PLANTING_DOTS = 5000  # acima disso o maciço é desenhado só com preenchimento
@@ -170,6 +172,67 @@ def planting_dots(e: PlantingArea, radius: float) -> QPainterPath:
     return path
 
 
+# --- vista (elevação) ---------------------------------------------------------
+
+def elevation_data(doc, catalog, ev: ElevationView):
+    return compute_elevation(ev, doc.entities.values(), lambda e: doc.layer_for(e).visible, catalog,
+                             document_terrain(doc))
+
+
+def elevation_box(ev: ElevationView, data) -> QPainterPath:
+    """Retângulo que envolve o desenho da vista (com o título)."""
+    path = QPainterPath()
+    b = data.bounds() if data else None
+    if b is not None:
+        _tx, ty = title_position(ev, data)
+        path.addRect(QRectF(QPointF(min(b[0], ev.origin[0]), min(b[1], ty - ev.text_height)),
+                            QPointF(max(b[2], ev.origin[0] + ev.length), b[3])))
+    return path
+
+
+def paint_elevation(painter: QPainter, ev: ElevationView, data, color: QColor, lw: float | None = None,
+                    print_mode: bool = False, selected: bool = False):
+    """Desenha marca de corte, perfil do terreno, plantas (do fundo para a frente) e título.
+
+    ``lw``: espessura base em unidades do modelo (impressão); None = traços de tela.
+    """
+    def pen(k: float, style=Qt.PenStyle.SolidLine) -> QPen:
+        if lw is None:
+            return cosmetic_pen(color, 1.2 * k, style)
+        return QPen(color, lw * k, style, Qt.PenCapStyle.FlatCap, Qt.PenJoinStyle.RoundJoin)
+
+    mk = marker_geometry(ev)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    painter.setPen(pen(1.0, Qt.PenStyle.DashDotLine))
+    painter.drawLine(QPointF(*mk["line"][0]), QPointF(*mk["line"][1]))
+    painter.setPen(pen(1.0))
+    painter.setBrush(QBrush(color))
+    for a, tip, b in mk["arrows"]:
+        painter.drawPolygon(QPolygonF([QPointF(*a), QPointF(*tip), QPointF(*b)]))
+    for pos in mk["labels"]:
+        painter.fillPath(text_path(ev.name, ev.text_height, pos), QBrush(color))
+    if data is None:
+        return
+    for pl in data.plants:
+        paint_shapes(painter, pl.shapes, QColor(pl.color), None if lw is None else lw * 0.5,
+                     fade=pl.dist / data.depth_range if data.depth_range else 0.0,
+                     outline_color=theme.SELECTION if selected else None, print_mode=print_mode)
+    if data.profile:
+        prof = QPainterPath()
+        prof.moveTo(*data.profile[0])
+        for q in data.profile[1:]:
+            prof.lineTo(*q)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(pen(2.2))
+        painter.drawPath(prof)
+    tx, ty = title_position(ev, data)
+    title = text_path(f"VISTA {ev.name}", ev.text_height, (tx, ty), center=True)
+    painter.fillPath(title, QBrush(color))
+    w = title.boundingRect().width()
+    painter.setPen(pen(1.5))
+    painter.drawLine(QPointF(tx - w / 2, ty - ev.text_height * 0.45), QPointF(tx + w / 2, ty - ev.text_height * 0.45))
+
+
 class EntityItem(QGraphicsItem):
     def __init__(self, view, entity: Entity):
         super().__init__()
@@ -199,13 +262,22 @@ class EntityItem(QGraphicsItem):
         self._fill = None
         if isinstance(e, Plant):
             sp = self.species()
-            self.symbol = sp.simbolo if sp else "arvore"
+            self.symbol, self.drawing = plan_args(sp)
             self.plant_color = QColor(e.color or (sp.cor if sp else "#6cc070"))
             r = e.canopy / 2
-            self._stroke = symbol_paths(self.symbol, r)[0]
+            self._stroke = symbol_paths(self.symbol, r, self.drawing)[0]
             self._rect = symbol_bounds(r)
             self.setPos(*e.position)
             self.setZValue(2 + 1 / (1 + e.height))  # plantas menores por cima
+        elif isinstance(e, ElevationView):
+            self._data = elevation_data(self.view.doc, self.view.catalog, e)
+            self._stroke = entity_path(Line(p1=e.p1, p2=e.p2))
+            self._fill = elevation_box(e, self._data)
+            br = self._stroke.boundingRect().united(self._fill.boundingRect())
+            pad = max(e.text_height * 3, 0.5)
+            self._rect = br.adjusted(-pad, -pad, pad, pad)
+            self.setPos(0, 0)
+            self.setZValue(1.0)
         elif isinstance(e, PlantingArea):
             sp = self.species()
             self.plant_color = QColor(e.color or (sp.cor if sp else "#6cc070"))
@@ -265,13 +337,20 @@ class EntityItem(QGraphicsItem):
         e = self.entity
         if isinstance(e, Plant):
             outline = theme.SELECTION if selected else None
-            paint_symbol(painter, self.symbol, e.canopy / 2, self.plant_color, outline)
+            paint_symbol(painter, self.symbol, e.canopy / 2, self.plant_color, outline, drawing=self.drawing)
             if selected:
                 painter.setPen(cosmetic_pen(theme.SELECTION, 0, Qt.PenStyle.DashLine))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawRect(self._stroke.boundingRect())
             return
         color = theme.SELECTION if selected else self.color
+        if isinstance(e, ElevationView):
+            paint_elevation(painter, e, self._data, color, selected=selected)
+            if selected:
+                painter.setPen(cosmetic_pen(theme.SELECTION, 0, Qt.PenStyle.DashLine))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(self._fill)
+            return
         if isinstance(e, PlantingArea):
             c = QColor(self.plant_color)
             c.setAlpha(40)

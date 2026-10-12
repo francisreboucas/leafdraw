@@ -7,7 +7,7 @@ import numpy as np
 from PySide6.QtGui import QColor
 from shapely.geometry import Polygon
 
-from leafdraw.core.entities import Contour, Hatch, Plant, PlantingArea, SpotHeight, Text
+from leafdraw.core.entities import Contour, ElevationView, Hatch, Plant, PlantingArea, SpotHeight, Text
 from leafdraw.core.geom import tessellate
 from leafdraw.core.terrain import flat_triangles
 from leafdraw.ui.plants3d import HIGHLIGHT, MESHES, plant_instances, shadow_disc
@@ -94,7 +94,7 @@ def build_scene(entities, doc, catalog, zmap: ZMap, selected: set[str] = frozens
             _hatch(out, e, layer, zmap, sel)
         elif isinstance(e, SpotHeight):
             _spot(out, e, layer, zmap, sel)
-        elif isinstance(e, Text):
+        elif isinstance(e, (Text, ElevationView)):  # textos e vistas só existem no 2D
             continue
         else:
             _lines(out, e, layer, zmap, sel)

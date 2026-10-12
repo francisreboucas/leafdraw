@@ -21,6 +21,16 @@ DEFAULT_CATALOG = Path(__file__).resolve().parent.parent / "resources" / "catalo
 # Símbolos 2D/3D suportados.
 SYMBOLS = {"arvore": "Árvore", "palmeira": "Palmeira", "arbusto": "Arbusto", "forracao": "Forração"}
 
+# Desenho próprio (bloco importado): ((fechado, ((x, y), ...)), ...) em unidades normalizadas.
+# Planta: centrado na origem, cabe no raio 1. Vista: x em [-0,5; 0,5], y em [0; 1] (base no chão).
+Drawing = tuple[tuple[bool, tuple[tuple[float, float], ...]], ...]
+
+
+def drawing_from_json(v) -> Drawing | None:
+    if not v:
+        return None
+    return tuple((bool(closed), tuple((float(x), float(y)) for x, y in pts)) for closed, pts in v)
+
 
 @dataclass(frozen=True)
 class Species:
@@ -34,6 +44,8 @@ class Species:
     simbolo: str = "arvore"
     insolacao: str = ""
     notas: str = ""
+    desenho_planta: Drawing | None = None  # None = símbolo automático
+    desenho_vista: Drawing | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -41,7 +53,10 @@ class Species:
     @staticmethod
     def from_dict(d: dict) -> Species:
         names = Species.__dataclass_fields__.keys()
-        sp = Species(**{k: v for k, v in d.items() if k in names})
+        d = {k: v for k, v in d.items() if k in names}
+        for k in ("desenho_planta", "desenho_vista"):
+            d[k] = drawing_from_json(d.get(k))
+        sp = Species(**d)
         if sp.simbolo not in SYMBOLS:
             raise ValueError(f"{sp.id}: símbolo desconhecido {sp.simbolo!r}")
         return sp

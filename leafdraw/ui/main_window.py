@@ -69,6 +69,7 @@ TOOL_COMMANDS = [
     ToolCommand("label", "Rótulo de plantas", ("ETQ", "ROTULO"), T.LabelTool, "landscape"),
     ToolCommand("contour", "Curva de nível", ("CN", "CURVA"), T.ContourTool, "landscape"),
     ToolCommand("spot", "Cota de nível", ("NV", "COTANIVEL"), T.SpotHeightTool, "landscape"),
+    ToolCommand("elevation", "Vista (elevação)", ("VISTA", "VI", "ELEV"), T.ElevationTool, "landscape"),
 ]
 
 # ferramentas que dependem da espécie escolhida no Gerenciador de Objetos

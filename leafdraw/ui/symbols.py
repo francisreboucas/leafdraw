@@ -5,7 +5,9 @@ import math
 from functools import lru_cache
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTransform
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF, QTransform
+
+from leafdraw.core.elevation import TRUNK_COLOR, custom_plan_shapes, species_elevation
 
 # Opacidade do preenchimento por símbolo.
 FILL_ALPHA = {"arvore": 70, "palmeira": 35, "arbusto": 140, "forracao": 90}
@@ -64,16 +66,39 @@ def _unit_symbol(simbolo: str) -> tuple[QPainterPath, QPainterPath]:
     return outline, details
 
 
-def symbol_paths(simbolo: str, radius: float) -> tuple[QPainterPath, QPainterPath]:
-    outline, details = _unit_symbol(simbolo)
+def shape_path(shape) -> QPainterPath:
+    path = QPainterPath()
+    path.addPolygon(QPolygonF([QPointF(x, y) for x, y in shape.pts]))
+    if shape.closed:
+        path.closeSubpath()
+    return path
+
+
+@lru_cache(maxsize=256)
+def _unit_custom(drawing) -> tuple[QPainterPath, QPainterPath]:
+    outline, details = QPainterPath(), QPainterPath()
+    outline.setFillRule(Qt.FillRule.WindingFill)
+    for sh in custom_plan_shapes(drawing, 1.0):
+        (outline if sh.closed else details).addPath(shape_path(sh))
+    return outline, details
+
+
+def symbol_paths(simbolo: str, radius: float, drawing=None) -> tuple[QPainterPath, QPainterPath]:
+    """(contorno, detalhes) do símbolo em planta; ``drawing`` = bloco próprio da espécie."""
+    outline, details = _unit_custom(drawing) if drawing else _unit_symbol(simbolo)
     t = QTransform.fromScale(radius, radius)
     return t.map(outline), t.map(details)
 
 
+def plan_args(sp) -> tuple[str, object]:
+    """(símbolo, desenho próprio) da versão Planta de uma espécie (ou do padrão, sem espécie)."""
+    return (sp.simbolo, sp.desenho_planta) if sp else ("arvore", None)
+
+
 def paint_symbol(painter: QPainter, simbolo: str, radius: float, color: QColor, outline_color: QColor | None = None,
-                 pen_width: float | None = None):
+                 pen_width: float | None = None, drawing=None):
     """``pen_width`` em unidades do painter (impressão); None = traço fino de tela."""
-    outline, details = symbol_paths(simbolo, radius)
+    outline, details = symbol_paths(simbolo, radius, drawing)
     fill = QColor(color)
     fill.setAlpha(FILL_ALPHA.get(simbolo, 80))
     if pen_width is None:
@@ -88,15 +113,81 @@ def paint_symbol(painter: QPainter, simbolo: str, radius: float, color: QColor, 
     painter.drawPath(details)
 
 
-def species_icon(simbolo: str, color: str, size: int = 32) -> QIcon:
+def species_icon(simbolo: str, color: str, size: int = 32, drawing=None) -> QIcon:
+    return QIcon(plan_pixmap(simbolo, color, size, drawing))
+
+
+def plan_pixmap(simbolo: str, color: str, size: int = 32, drawing=None) -> QPixmap:
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.translate(size / 2, size / 2)
-    paint_symbol(p, simbolo, size * 0.42, QColor(color))
+    p.scale(1, -1)  # símbolos estão com Y para cima
+    paint_symbol(p, simbolo, size * 0.42, QColor(color), drawing=drawing)
     p.end()
-    return QIcon(pm)
+    return pm
+
+
+def sp_icon(sp, size: int = 32) -> QIcon:
+    """Ícone da versão Planta da espécie."""
+    return species_icon(sp.simbolo, sp.cor, size, sp.desenho_planta)
+
+
+# --- versão Vista (elevação) ----------------------------------------------------------
+
+def paint_shapes(painter: QPainter, shapes, color: QColor, pen_width: float | None = None, fade: float = 0.0,
+                 outline_color: QColor | None = None, print_mode: bool = False):
+    """Desenha silhuetas de vista (Y para cima). ``fade`` 0..1 clareia o que está mais ao fundo."""
+    leaf = QColor(color)
+    trunk = QColor(TRUNK_COLOR)
+    if print_mode:  # no papel, o fundo clareia misturando com branco (sem transparência)
+        k = 0.25 + 0.5 * fade
+        leaf = _mix(leaf, QColor("white"), k)
+        trunk = _mix(trunk, QColor("white"), 0.2 + 0.5 * fade)
+    else:
+        leaf.setAlpha(int(225 - 120 * fade))
+        trunk.setAlpha(int(235 - 120 * fade))
+    line = QColor(outline_color) if outline_color is not None else (
+        color.darker(150) if print_mode else color.lighter(135))
+    if pen_width is None:
+        pen = QPen(line, 0)
+        pen.setCosmetic(True)
+    else:
+        pen = QPen(line, pen_width)
+    for sh in shapes:
+        path = shape_path(sh)
+        painter.setPen(pen)
+        if sh.closed and sh.fill:
+            painter.setBrush(QBrush(trunk if sh.fill == "tronco" else leaf))
+        else:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+
+
+def _mix(a: QColor, b: QColor, k: float) -> QColor:
+    return QColor.fromRgbF(a.redF() + (b.redF() - a.redF()) * k, a.greenF() + (b.greenF() - a.greenF()) * k,
+                           a.blueF() + (b.blueF() - a.blueF()) * k)
+
+
+def elevation_pixmap(sp, w_px: int, h_px: int) -> QPixmap:
+    """Prévia da versão Vista da espécie no tamanho dado (mantém a proporção altura/copa)."""
+    pm = QPixmap(w_px, h_px)
+    pm.fill(Qt.GlobalColor.transparent)
+    if sp is None:
+        return pm
+    shapes = species_elevation(sp, sp.copa, sp.altura, sp.id)
+    pts = [q for sh in shapes for q in sh.pts]
+    x0, x1 = min(q[0] for q in pts), max(q[0] for q in pts)
+    y0, y1 = min(q[1] for q in pts), max(q[1] for q in pts)
+    k = min((w_px - 4) / max(x1 - x0, 1e-6), (h_px - 4) / max(y1 - y0, 1e-6))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.translate(w_px / 2 - (x0 + x1) / 2 * k, h_px - 2 + y0 * k)
+    p.scale(k, -k)
+    paint_shapes(p, shapes, QColor(sp.cor))
+    p.end()
+    return pm
 
 
 def symbol_bounds(radius: float) -> QRectF:

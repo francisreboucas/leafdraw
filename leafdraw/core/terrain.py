@@ -176,3 +176,18 @@ def flat_triangles(g, z: float) -> np.ndarray:
             xy = np.array(t.exterior.coords[:3])
             tris.append(np.column_stack([xy, np.full(3, z)]))
     return np.array(tris) if tris else np.zeros((0, 3, 3))
+
+
+def document_terrain(doc) -> Terrain:
+    """Terreno das curvas e cotas visíveis do documento, refeito só quando elas mudam.
+
+    As entidades são imutáveis, então comparar por identidade basta para saber se mudou.
+    """
+    ents = [e for e in doc.entities.values()
+            if isinstance(e, (Contour, SpotHeight)) and doc.layer_for(e).visible]
+    cached = getattr(doc, "_terrain_cache", None)
+    if cached is not None and len(cached[0]) == len(ents) and all(a is b for a, b in zip(cached[0], ents)):
+        return cached[1]
+    terrain = Terrain.from_entities(ents)
+    doc._terrain_cache = (ents, terrain)
+    return terrain

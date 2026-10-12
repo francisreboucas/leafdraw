@@ -5,15 +5,20 @@ from dataclasses import replace
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-                               QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+                               QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout,
+                               QWidget)
 
 from leafdraw.core.catalog import SYMBOLS, Species
+from leafdraw.core.dxf_io import dwg_supported, read_drawing
+from leafdraw.core.symbol_blocks import MODEL_SPACE, block_drawing, list_blocks
 from leafdraw.ui.icons import color_icon
-from leafdraw.ui.symbols import species_icon
+from leafdraw.ui.symbols import elevation_pixmap, plan_pixmap, sp_icon
 
 ROLE_ID = Qt.ItemDataRole.UserRole
+PREVIEW = 84
+WHOLE_DRAWING = "(desenho inteiro)"
 INSOLACAO = ["Pleno sol", "Pleno sol a meia-sombra", "Meia-sombra", "Sombra"]
 
 
@@ -36,6 +41,7 @@ class CatalogDialog(QDialog):
         self.changed = False
         self._current: str | None = None
         self._color = "#6cc070"
+        self._drawings: dict[str, object] = {"planta": None, "vista": None}  # blocos próprios do formulário
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Buscar…")
@@ -77,6 +83,10 @@ class CatalogDialog(QDialog):
         self.f_insol.addItems(INSOLACAO)
         self.f_notas = QPlainTextEdit()
         self.f_notas.setFixedHeight(70)
+        self.version_rows = {kind: self._version_row(kind) for kind in ("planta", "vista")}
+        for w in (self.f_altura, self.f_copa):
+            w.valueChanged.connect(self._update_previews)
+        self.f_simbolo.currentIndexChanged.connect(self._update_previews)
         self.save_btn = QPushButton("Salvar espécie")
         self.save_btn.clicked.connect(self._save)
 
@@ -89,6 +99,8 @@ class CatalogDialog(QDialog):
         form.addRow("Diâmetro da copa", self.f_copa)
         form.addRow("Cor do símbolo", self.f_cor)
         form.addRow("Símbolo", self.f_simbolo)
+        form.addRow("Versão Planta", self.version_rows["planta"][0])
+        form.addRow("Versão Vista", self.version_rows["vista"][0])
         form.addRow("Insolação", self.f_insol)
         form.addRow("Notas", self.f_notas)
         right = QWidget()
@@ -117,7 +129,7 @@ class CatalogDialog(QDialog):
         self.list.blockSignals(True)
         self.list.clear()
         for sp in sorted(self.catalog.all(), key=lambda s: (s.categoria, s.nome_popular)):
-            it = QListWidgetItem(species_icon(sp.simbolo, sp.cor), f"{sp.nome_popular}  —  {sp.categoria}")
+            it = QListWidgetItem(sp_icon(sp), f"{sp.nome_popular}  —  {sp.categoria}")
             it.setData(ROLE_ID, sp.id)
             it.setToolTip(sp.nome_cientifico)
             self.list.addItem(it)
@@ -153,6 +165,8 @@ class CatalogDialog(QDialog):
         self.f_copa.setValue(sp.copa)
         self._set_color(sp.cor)
         self.f_simbolo.setCurrentIndex(list(SYMBOLS).index(sp.simbolo))
+        self._drawings = {"planta": sp.desenho_planta, "vista": sp.desenho_vista}
+        self._update_previews()
         self.f_insol.setCurrentText(sp.insolacao)
         self.f_notas.setPlainText(sp.notas)
         removable = self.catalog.can_remove(sp.id)  # embutidas e de projeto não são excluídas
@@ -163,6 +177,86 @@ class CatalogDialog(QDialog):
         self._color = color
         self.f_cor.setIcon(color_icon(color, 16))
         self.f_cor.setText(color)
+        self._update_previews()
+
+    # --- versões Planta e Vista ---------------------------------------------
+
+    def _version_row(self, kind: str):
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        preview = QLabel()
+        preview.setFixedSize(PREVIEW, PREVIEW)
+        preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        preview.setStyleSheet("background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);")
+        status = QLabel()
+        status.setStyleSheet("color: #9aa5b1;")
+        imp = QPushButton("Importar bloco…")
+        imp.setToolTip("Usa um bloco de um arquivo DXF/DWG como desenho desta versão. "
+                       + ("A Planta é ajustada ao diâmetro da copa." if kind == "planta"
+                          else "A Vista é ajustada à copa (largura) e à altura; a base do bloco fica no chão."))
+        imp.clicked.connect(lambda: self._import_block(kind))
+        auto = QPushButton("Automático")
+        auto.setToolTip("Volta ao desenho gerado pelo tipo de símbolo, altura e copa")
+        auto.clicked.connect(lambda: self._set_drawing(kind, None))
+        buttons = QVBoxLayout()
+        buttons.addWidget(status)
+        buttons.addWidget(imp)
+        buttons.addWidget(auto)
+        buttons.addStretch()
+        row.addWidget(preview)
+        row.addLayout(buttons)
+        row.addStretch()
+        return w, preview, status, auto
+
+    def _preview_species(self) -> Species:
+        return Species(id=self._current or "preview", nome_popular="", nome_cientifico="", categoria="",
+                       altura=self.f_altura.value(), copa=self.f_copa.value(), cor=self._color,
+                       simbolo=self.f_simbolo.currentData() or "arvore",
+                       desenho_planta=self._drawings["planta"], desenho_vista=self._drawings["vista"])
+
+    def _update_previews(self, *_):
+        if not hasattr(self, "version_rows"):
+            return
+        sp = self._preview_species()
+        size = PREVIEW - 8
+        pixmaps = {"planta": plan_pixmap(sp.simbolo, sp.cor, size, sp.desenho_planta),
+                   "vista": elevation_pixmap(sp, size, size)}
+        for kind, (_w, preview, status, auto) in self.version_rows.items():
+            preview.setPixmap(pixmaps[kind])
+            custom = self._drawings[kind] is not None
+            status.setText("Bloco importado" if custom else "Automático")
+            auto.setEnabled(custom)
+
+    def _set_drawing(self, kind: str, drawing):
+        self._drawings[kind] = drawing
+        self._update_previews()
+
+    def _import_block(self, kind: str):
+        filt = "Desenhos CAD (*.dxf *.dwg)" if dwg_supported() else "DXF (*.dxf)"
+        path, _ = QFileDialog.getOpenFileName(self, f"Bloco da versão {kind.capitalize()}", "", filt)
+        if not path:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            drawing = read_drawing(path)
+            blocks = list_blocks(drawing)
+        except Exception as exc:
+            QMessageBox.warning(self, "Importar bloco", f"Não foi possível ler o arquivo:\n{exc}")
+            return
+        finally:
+            QApplication.restoreOverrideCursor()
+        choice, ok = QInputDialog.getItem(self, "Importar bloco",
+                                          f"Bloco para a versão {kind.capitalize()}:",
+                                          blocks + [WHOLE_DRAWING], 0, False)
+        if not ok:
+            return
+        try:
+            result = block_drawing(drawing, MODEL_SPACE if choice == WHOLE_DRAWING else choice, kind)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Importar bloco", str(exc))
+            return
+        self._set_drawing(kind, result)
 
     def _pick_color(self):
         c = QColorDialog.getColor(QColor(self._color), self, "Cor do símbolo")
@@ -181,7 +275,8 @@ class CatalogDialog(QDialog):
         return Species(id=sid, nome_popular=popular, nome_cientifico=cientifico, categoria=categoria,
                        altura=self.f_altura.value(), copa=self.f_copa.value(), cor=self._color,
                        simbolo=self.f_simbolo.currentData(), insolacao=self.f_insol.currentText().strip(),
-                       notas=self.f_notas.toPlainText().strip())
+                       notas=self.f_notas.toPlainText().strip(), desenho_planta=self._drawings["planta"],
+                       desenho_vista=self._drawings["vista"])
 
     def _save(self):
         if self._current is None:
