@@ -24,6 +24,7 @@ leafdraw/
     dxf_io.py      importação/exportação DXF e DWG (ezdxf)
     modify.py      aparar, estender, distribuir ao longo de caminhos
     schedule.py    quantitativos e CSV
+    sheets.py      folhas, elementos (janela de vista, carimbo, quadro…) e layout padrão
     commands.py    AddEntities / RemoveEntities / ReplaceEntities (QUndoCommand)
     catalog.py     catálogo de espécies (resources/catalog.json)
     fileio.py      arquivo .leaf (zip com document.json)
@@ -35,6 +36,9 @@ leafdraw/
     commandline.py linha de comando
     dxf_dialog.py  opções de importação
     catalog_dialog.py editor do catálogo de espécies
+    composer.py    aba Folhas: edição das pranchas, PDF e impressão
+    render.py      desenho das folhas (mesmo código para tela e PDF)
+    project_dialog.py dados do projeto (carimbo)
     viewport3d.py  vista 3D (moderngl): câmera orbital, plantas por instancing
     panels/        camadas, Gerenciador de Objetos (catálogo), propriedades, quantitativos
 ```
@@ -56,6 +60,7 @@ Enter ou Espaço confirmam; Enter vazio termina a ferramenta ou repete o último
 | Aparar, Estender | TR, EST |
 | Planta isolada, Maciço, Plantas em linha, Rótulo | PLANTA, MAC, LIN, ETQ |
 | Quantitativos, Catálogo de espécies | QUANT, CATALOGO |
+| Aba Folhas / Modelo, PDF das folhas, Dados do projeto | FOLHAS, MODELO, PDF, PROJETO |
 | Zoom extensão, Desfazer, Importar/Exportar DXF, Ajuda | Z, U, IMPORTAR/EXPORTAR, ? |
 
 Coordenadas: `10,5` (absoluta), `@3,4` (relativa), `@5<45` (polar), ou um número
@@ -111,6 +116,26 @@ O botão OBJETO da barra de status tem um menu com os modos de snap
 Para inserir plantas, arraste uma espécie do Gerenciador de Objetos para a
 planta, ou dê duplo clique nela e clique no desenho.
 
+## Folhas de impressão
+
+Aba **Folhas** (Ctrl+2):
+
+- **Nova…** cria uma prancha A0–A4 (paisagem ou retrato) com margens ABNT (25 mm à
+  esquerda), carimbo, norte, escala gráfica, quadro de vegetação (A0–A2 paisagem) e uma
+  janela de vista já enquadrando o desenho numa escala padrão.
+- Elementos: **janela de vista 2D** (escala 1:n, centro, camadas visíveis por janela),
+  **janela de vista 3D** (usa a câmera atual do 3D), **carimbo**, **quadro de vegetação**
+  (símbolo, nome popular, científico, altura, copa, quantidade, total e áreas de
+  revestimento), **texto**, **norte** e **escala gráfica**.
+- Arraste para mover, alça azul para redimensionar; numa janela de vista, Ctrl+arrastar
+  faz pan e Ctrl+roda troca a escala; duplo clique abre a região no Modelo.
+- **Dados do projeto** (Arquivo → Dados do projeto) preenchem o carimbo de todas as folhas;
+  o conteúdo é o título da folha e a escala vem da 1ª janela de vista.
+- **PDF** vetorial no tamanho real do papel (uma folha ou todas, Ctrl+Shift+P) e
+  **Imprimir** (Ctrl+P), que ajusta a folha ao papel da impressora.
+- Espessura de linha por camada (coluna "Esp." no painel Camadas). Cores muito claras,
+  feitas para o fundo escuro da tela, saem pretas no papel.
+
 ## DXF e DWG
 
 A importação lê LINE, (LW)POLYLINE, CIRCLE, ARC, ELLIPSE, SPLINE, TEXT, MTEXT,
@@ -128,5 +153,5 @@ DWG funciona se o [ODA File Converter](https://www.opendesign.com/guestfiles/oda
 1. **Base** (feito): janela, docks, camadas, undo/redo, arquivo `.leaf`, 2D, 3D básico, catálogo
 2. **CAD 2D** (feito): arco, texto, cota, hachura, snaps, linha de comando, edição, DXF/DWG
 3. **Paisagismo** (feito): maciços, plantas em linha, rótulos, quantitativos, catálogo editável, aparar/estender, grips
-4. Compositor de folhas: layouts A0 a A4, janelas de vista em escala, carimbo, legenda, PDF
+4. **Folhas** (feito): pranchas A0–A4, janelas de vista 2D/3D em escala, carimbo, quadro de vegetação, norte, escala gráfica, PDF e impressão
 5. 3D: picking, gizmos 3D, terreno, modelos melhores de plantas

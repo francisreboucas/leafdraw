@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QHBoxLayout, QHeaderView, QMessageBox,
-                               QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QHBoxLayout, QHeaderView, QInputDialog,
+                               QMessageBox, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+
+from leafdraw.core.layers import LINEWEIGHTS
 
 from leafdraw.ui.icons import color_icon, icon
 
-COL_CUR, COL_NAME, COL_VIS, COL_LOCK, COL_COLOR = range(5)
+COL_CUR, COL_NAME, COL_VIS, COL_LOCK, COL_COLOR, COL_LW = range(6)
 ROLE_ID = Qt.ItemDataRole.UserRole
 
 
@@ -18,14 +20,14 @@ class LayersPanel(QWidget):
         self._updating = False
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["", "Nome", "Vis.", "Bloq.", "Cor"])
+        self.tree.setHeaderLabels(["", "Nome", "Vis.", "Bloq.", "Cor", "Esp."])
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         self.tree.setEditTriggers(QAbstractItemView.EditTrigger.EditKeyPressed)
         hdr = self.tree.header()
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
-        for col in (COL_CUR, COL_VIS, COL_LOCK, COL_COLOR):
+        for col in (COL_CUR, COL_VIS, COL_LOCK, COL_COLOR, COL_LW):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.itemChanged.connect(self._on_item_changed)
         self.tree.itemDoubleClicked.connect(self._on_double_click)
@@ -71,6 +73,8 @@ class LayersPanel(QWidget):
             it.setCheckState(COL_LOCK, Qt.CheckState.Checked if layer.locked else Qt.CheckState.Unchecked)
             it.setIcon(COL_COLOR, color_icon(layer.color))
             it.setToolTip(COL_COLOR, "Duplo clique para mudar a cor")
+            it.setText(COL_LW, f"{layer.lineweight:.2f}".replace(".", ","))
+            it.setToolTip(COL_LW, "Espessura na impressão (mm). Duplo clique para mudar")
             if layer.id != "0":
                 it.setFlags(it.flags() | Qt.ItemFlag.ItemIsEditable)
             if current:
@@ -107,6 +111,13 @@ class LayersPanel(QWidget):
             color = QColorDialog.getColor(QColor(self.doc.layers[lid].color), self, "Cor da camada")
             if color.isValid():
                 self.doc.update_layer(lid, color=color.name())
+        elif col == COL_LW:
+            cur = self.doc.layers[lid].lineweight
+            items = [f"{w:.2f} mm".replace(".", ",") for w in LINEWEIGHTS]
+            idx = min(range(len(LINEWEIGHTS)), key=lambda i: abs(LINEWEIGHTS[i] - cur))
+            choice, ok = QInputDialog.getItem(self, "Espessura da camada", "Espessura na impressão:", items, idx, False)
+            if ok:
+                self.doc.update_layer(lid, lineweight=LINEWEIGHTS[items.index(choice)])
         elif col == COL_NAME and lid != "0":
             self.tree.editItem(it, COL_NAME)
         elif col in (COL_CUR, COL_NAME):

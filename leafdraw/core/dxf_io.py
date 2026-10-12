@@ -116,8 +116,9 @@ class _Importer:
                 self.layer_ids[name.lower()] = by_name[name.lower()].id
                 continue
             color = _hex(dl.rgb) if dl.rgb else _aci_hex(dl.color)
+            lw = dl.dxf.get("lineweight", -3)
             layer = Layer(name=name, color=color, visible=not (dl.is_off() or dl.is_frozen()),
-                          locked=dl.is_locked())
+                          locked=dl.is_locked(), lineweight=lw / 100 if lw > 0 else 0.25)
             self.layers.append(layer)
             self.layer_ids[name.lower()] = layer.id
 
@@ -391,6 +392,7 @@ def export_dxf(doc, path: str, catalog=None):
         names[lid] = name
         dl = out.layers.get(name) if name in out.layers else out.layers.add(name)
         dl.rgb = _rgb(layer.color)
+        dl.dxf.lineweight = int(round(layer.lineweight * 100))
         if not layer.visible:
             dl.off()
         if layer.locked:

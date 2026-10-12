@@ -70,12 +70,17 @@ def symbol_paths(simbolo: str, radius: float) -> tuple[QPainterPath, QPainterPat
     return t.map(outline), t.map(details)
 
 
-def paint_symbol(painter: QPainter, simbolo: str, radius: float, color: QColor, outline_color: QColor | None = None):
+def paint_symbol(painter: QPainter, simbolo: str, radius: float, color: QColor, outline_color: QColor | None = None,
+                 pen_width: float | None = None):
+    """``pen_width`` em unidades do painter (impressão); None = traço fino de tela."""
     outline, details = symbol_paths(simbolo, radius)
     fill = QColor(color)
     fill.setAlpha(FILL_ALPHA.get(simbolo, 80))
-    pen = QPen(outline_color or color.lighter(130), 0)
-    pen.setCosmetic(True)
+    if pen_width is None:
+        pen = QPen(outline_color or color.lighter(130), 0)
+        pen.setCosmetic(True)
+    else:
+        pen = QPen(outline_color or color.darker(130), pen_width)
     painter.setPen(pen)
     painter.setBrush(QBrush(fill))
     painter.drawPath(outline)

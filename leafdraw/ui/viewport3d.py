@@ -10,7 +10,7 @@ import math
 import moderngl
 import numpy as np
 from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QImage
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
 from leafdraw.core.entities import Plant, PlantingArea
@@ -74,6 +74,7 @@ LINE_Z = 0.03
 GRID_Z = 0.015
 CIRCLE_SEGMENTS = 64
 MAX_MASSED_3D = 30_000  # mudas de maciço desenhadas no 3D
+MAX_OFFSCREEN = 4096  # px, lado máximo da imagem 3D para folhas
 
 
 def _rgb(color: str):
@@ -106,6 +107,20 @@ class OrbitCamera:
             return glmath.orthographic(-h * aspect, h * aspect, -h, h, -far, far)
         near = max(0.05, self.distance * 0.01)
         return glmath.perspective(self.FOV, aspect, near, self.distance * 50 + 5_000)
+
+    def state(self) -> dict:
+        return {"target": [float(v) for v in self.target], "distance": self.distance, "yaw": self.yaw,
+                "pitch": self.pitch, "ortho": self.ortho}
+
+    @staticmethod
+    def from_state(d: dict) -> OrbitCamera:
+        cam = OrbitCamera()
+        cam.target = np.array(d.get("target", [0, 0, 0]), dtype=float)
+        cam.distance = float(d.get("distance", 60.0))
+        cam.yaw = float(d.get("yaw", -60.0))
+        cam.pitch = float(d.get("pitch", 35.0))
+        cam.ortho = bool(d.get("ortho", False))
+        return cam
 
     def basis(self):
         """Vetores direita/cima da câmera no mundo (para pan)."""
@@ -275,17 +290,45 @@ class Viewport3D(QOpenGLWidget):
         w, h = max(1, int(self.width() * dpr)), max(1, int(self.height() * dpr))
         fbo = self.ctx.detect_framebuffer(self.defaultFramebufferObject())
         fbo.use()
+        self._draw(self.cam, w, h)
+
+    def _draw(self, cam: OrbitCamera, w: int, h: int, grid: bool = True):
         self.ctx.viewport = (0, 0, w, h)
         self.ctx.clear(*SKY, 1.0)
         self.ctx.enable(moderngl.DEPTH_TEST | moderngl.BLEND)
         self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-
-        mvp = glmath.gl_bytes(self.cam.projection(w / h) @ self.cam.view())
+        mvp = glmath.gl_bytes(cam.projection(w / h) @ cam.view())
         self.mesh_prog["mvp"].write(mvp)
         self.line_prog["mvp"].write(mvp)
-        for vao, mode, n, _buf in [self._ground, self._grid, *self._scene_vaos]:
+        layers = [self._ground, self._grid] if grid else [self._ground]
+        for vao, mode, n, _buf in [*layers, *self._scene_vaos]:
             vao.render(mode, instances=n)
         self.ctx.disable(moderngl.DEPTH_TEST | moderngl.BLEND)
+
+    def render_image(self, camera: dict | None, w: int, h: int) -> QImage | None:
+        """Renderiza fora da tela (para folhas). None se o OpenGL ainda não foi iniciado."""
+        if self.ctx is None:
+            return None
+        w, h = min(w, MAX_OFFSCREEN), min(h, MAX_OFFSCREEN)
+        cam = OrbitCamera.from_state(camera) if camera else self.cam
+        self.makeCurrent()
+        try:
+            if self._dirty:
+                self._rebuild()
+            samples = min(4, self.ctx.max_samples)
+            ms = self.ctx.framebuffer(color_attachments=[self.ctx.renderbuffer((w, h), samples=samples)],
+                                      depth_attachment=self.ctx.depth_renderbuffer((w, h), samples=samples))
+            out = self.ctx.simple_framebuffer((w, h))
+            ms.use()
+            self._draw(cam, w, h, grid=False)
+            self.ctx.copy_framebuffer(out, ms)
+            data = out.read(components=3, alignment=1)
+            img = QImage(data, w, h, 3 * w, QImage.Format.Format_RGB888).mirrored(False, True).copy()
+            for obj in (ms, out):
+                obj.release()
+            return img
+        finally:
+            self.doneCurrent()
 
     # --- interação --------------------------------------------------------
 

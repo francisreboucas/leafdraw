@@ -11,9 +11,10 @@ from PySide6.QtGui import QUndoStack
 
 from leafdraw.core.entities import Entity, union_bounds
 from leafdraw.core.layers import DEFAULT_LAYERS, Layer
+from leafdraw.core.sheets import Sheet
 
 FORMAT_NAME = "leafdraw"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 
 class Document(QObject):
@@ -24,6 +25,8 @@ class Document(QObject):
     currentLayerChanged = Signal(str)
     documentReset = Signal()
     modifiedChanged = Signal(bool)
+    sheetsChanged = Signal()
+    projectChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -33,14 +36,18 @@ class Document(QObject):
         self.entities: dict[str, Entity] = {}
         self.layers: dict[str, Layer] = {}
         self.current_layer = "0"
+        self.sheets: list[Sheet] = []
+        self.project: dict[str, str] = {}
         self._layers_dirty = False
         self._init_defaults()
 
     def _init_defaults(self):
         self.entities.clear()
         self.layers.clear()
-        for lid, name, color in DEFAULT_LAYERS:
-            self.layers[lid] = Layer(name=name, color=color, id=lid)
+        self.sheets = []
+        self.project = {}
+        for lid, name, color, lw in DEFAULT_LAYERS:
+            self.layers[lid] = Layer(name=name, color=color, id=lid, lineweight=lw)
         self.current_layer = "0"
 
     def new(self):
@@ -49,6 +56,8 @@ class Document(QObject):
         self.undo_stack.clear()
         self._layers_dirty = False
         self.documentReset.emit()
+        self.sheetsChanged.emit()
+        self.projectChanged.emit()
         self._emit_modified()
 
     # --- estado de modificação -------------------------------------------
@@ -91,6 +100,22 @@ class Document(QObject):
             raise KeyError(e.id)
         self.entities[e.id] = e
         self.entityChanged.emit(e.id)
+
+    # --- folhas e dados do projeto -----------------------------------------
+
+    def set_sheets(self, sheets: list[Sheet]):
+        """Baixo nível (usado por ``ReplaceSheets``)."""
+        self.sheets = list(sheets)
+        self.sheetsChanged.emit()
+
+    def sheet(self, sid: str) -> Sheet | None:
+        return next((s for s in self.sheets if s.id == sid), None)
+
+    def set_project_info(self, info: dict[str, str]):
+        self.project = dict(info)
+        self._layers_dirty = True  # não entra no undo, mas marca o projeto como alterado
+        self.projectChanged.emit()
+        self._emit_modified()
 
     def bounds(self):
         return union_bounds(e.bounds() for e in self.entities.values())
@@ -180,6 +205,8 @@ class Document(QObject):
             "current_layer": self.current_layer,
             "layers": [l.to_dict() for l in self.layers.values()],
             "entities": [e.to_dict() for e in self.entities.values()],
+            "sheets": [s.to_dict() for s in self.sheets],
+            "project": dict(self.project),
         }
 
     def load_dict(self, data: dict, path: str | None = None):
@@ -193,6 +220,8 @@ class Document(QObject):
         if "0" not in self.layers:
             self.layers = {"0": Layer(name="0", id="0"), **self.layers}
         self.entities = {e.id: e for e in entities}
+        self.sheets = [Sheet.from_dict(d) for d in data.get("sheets", [])]
+        self.project = dict(data.get("project", {}))
         cur = data.get("current_layer", "0")
         self.current_layer = cur if cur in self.layers else "0"
         self.undo_stack.clear()
@@ -202,3 +231,5 @@ class Document(QObject):
             self._layers_dirty = True
             self._emit_modified()
         self.documentReset.emit()
+        self.sheetsChanged.emit()
+        self.projectChanged.emit()

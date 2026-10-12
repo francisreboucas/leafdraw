@@ -52,3 +52,19 @@ class ReplaceEntities(QUndoCommand):
     def undo(self):
         for e in self.old:
             self.doc.replace_entity(e)
+
+
+class ReplaceSheets(QUndoCommand):
+    """Troca a lista de folhas inteira (folhas são pequenas; simplifica o undo)."""
+
+    def __init__(self, doc, new_sheets, text: str = "Editar folha"):
+        super().__init__(text)
+        self.doc = doc
+        self.old = list(doc.sheets)
+        self.new = list(new_sheets)
+
+    def redo(self):
+        self.doc.set_sheets(self.new)
+
+    def undo(self):
+        self.doc.set_sheets(self.old)

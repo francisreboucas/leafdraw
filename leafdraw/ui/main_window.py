@@ -6,10 +6,10 @@ from typing import Callable
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, QStandardPaths, Qt
+from PySide6.QtCore import QRectF, QSettings, QSize, QStandardPaths, Qt
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QLabel, QMainWindow, QMenu,
-                               QMessageBox, QSplitter, QStyle, QToolBar, QToolButton, QUndoView)
+                               QMessageBox, QSplitter, QStyle, QTabWidget, QToolBar, QToolButton, QUndoView)
 
 from leafdraw import __version__
 from leafdraw.core.catalog import default_catalog
@@ -21,6 +21,8 @@ from leafdraw.core.schedule import area_schedule, plant_schedule, to_csv
 from leafdraw.ui import tools as T
 from leafdraw.ui.catalog_dialog import CatalogDialog
 from leafdraw.ui.commandline import CommandLine
+from leafdraw.ui.composer import SheetComposer
+from leafdraw.ui.project_dialog import ProjectDialog
 from leafdraw.ui.dxf_dialog import DxfImportDialog
 from leafdraw.ui.icons import icon
 from leafdraw.ui.items2d import SNAP_LABELS
@@ -94,7 +96,13 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.view2d)
         self.splitter.addWidget(self.view3d)
         self.splitter.setSizes([900, 600])
-        self.setCentralWidget(self.splitter)
+        self.composer = SheetComposer(self.doc, self.catalog, render3d=self.view3d.render_image,
+                                      current_camera=lambda: self.view3d.cam.state())
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(self.splitter, "Modelo")
+        self.tabs.addTab(self.composer, "Folhas")
+        self.setCentralWidget(self.tabs)
 
         self._build_docks()
         self._build_actions()
@@ -115,6 +123,8 @@ class MainWindow(QMainWindow):
         self.catalog_panel.editRequested.connect(self.edit_catalog)
         self.schedule_panel.exportRequested.connect(self.export_schedule)
         self.schedule_panel.speciesSelected.connect(self.select_species)
+        self.composer.openInModel.connect(self._open_region_in_model)
+        self.composer.editProjectRequested.connect(self.edit_project)
         self.cmdline.set_prompt(v.tool.hint())
 
         self._restore_settings()
@@ -179,6 +189,10 @@ class MainWindow(QMainWindow):
         self.act_save_as = self._action("Salvar &como…", self.file_save_as, QKeySequence.StandardKey.SaveAs)
         self.act_import = self._action("&Importar DXF/DWG…", self.import_cad, "Ctrl+I", icon_name="import")
         self.act_export = self._action("&Exportar DXF…", self.export_cad, "Ctrl+Shift+E", icon_name="export")
+        self.act_project = self._action("Dados do &projeto…", self.edit_project)
+        self.act_pdf = self._action("Exportar &PDF das folhas…", lambda: self.composer.export_pdf(all_sheets=True),
+                                    "Ctrl+Shift+P")
+        self.act_print = self._action("Im&primir folhas…", self.print_sheets, QKeySequence.StandardKey.Print)
         self.act_quit = self._action("Sai&r", self.close, QKeySequence.StandardKey.Quit)
 
         self.act_undo = self.doc.undo_stack.createUndoAction(self, "&Desfazer")
@@ -247,6 +261,8 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addActions([self.act_import, self.act_export])
         m.addSeparator()
+        m.addActions([self.act_project, self.act_pdf, self.act_print])
+        m.addSeparator()
         m.addAction(self.act_quit)
 
         m = mb.addMenu("&Editar")
@@ -276,6 +292,9 @@ class MainWindow(QMainWindow):
         sm.addActions(self.snap_mode_actions)
 
         m = mb.addMenu("&Vistas")
+        m.addAction(self._action("&Modelo", lambda: self.tabs.setCurrentIndex(0), "Ctrl+1"))
+        m.addAction(self._action("&Folhas", lambda: self.tabs.setCurrentIndex(1), "Ctrl+2"))
+        m.addSeparator()
         m.addAction(self.act_zoom_ext)
         m.addSeparator()
         m.addActions(self.layout_group.actions())
@@ -352,6 +371,10 @@ class MainWindow(QMainWindow):
                 self.aliases[alias] = lambda m=mode: self._species_tool_from_catalog(m)
         extra = {
             ("CATALOGO",): self.edit_catalog,
+            ("FOLHAS", "LAYOUT"): lambda: self.tabs.setCurrentIndex(1),
+            ("MODELO", "MODEL"): lambda: self.tabs.setCurrentIndex(0),
+            ("PDF",): lambda: self.composer.export_pdf(all_sheets=True),
+            ("PROJETO",): self.edit_project,
             ("QUANT", "QTD"): self.show_schedule,
             ("Z", "ZE", "ZOOM"): self.zoom_extents,
             ("U", "DESFAZER"): self.doc.undo_stack.undo,
@@ -409,7 +432,8 @@ class MainWindow(QMainWindow):
         lines = [f"{c.label}: {', '.join(c.aliases)}" for c in TOOL_COMMANDS]
         lines += [f"{label}: {', '.join(aliases)}" for label, aliases, _c in SPECIES_TOOLS.values()]
         lines += ["Zoom extensão: Z, ZE", "Desfazer: U", "Importar DXF: IMPORTAR", "Exportar DXF: EXPORTAR",
-                  "Quantitativos: QUANT", "Catálogo: CATALOGO"]
+                  "Quantitativos: QUANT", "Catálogo: CATALOGO", "Folhas/Modelo: FOLHAS, MODELO",
+                  "PDF das folhas: PDF", "Dados do projeto: PROJETO"]
         for line in lines:
             self.cmdline.log(line)
         self.cmdline.log("Coordenadas: x,y · @dx,dy · @dist<ângulo · número = distância na direção do cursor "
@@ -501,6 +525,7 @@ class MainWindow(QMainWindow):
         self.coord_label.setText(f"X: {x:10.3f}   Y: {y:10.3f}".replace(".", ","))
 
     def set_layout(self, name):
+        self.tabs.setCurrentIndex(0)
         self.view2d.setVisible(name in ("2d", "split"))
         self.view3d.setVisible(name in ("3d", "split"))
         self.layout_actions[name].setChecked(True)
@@ -510,6 +535,22 @@ class MainWindow(QMainWindow):
             self.set_layout("split")
         self.view3d.set_view(name)
         self.act_ortho.setChecked(self.view3d.cam.ortho)
+
+    def _open_region_in_model(self, x0, y0, x1, y1):
+        self.tabs.setCurrentIndex(0)
+        self.view2d.fitInView(QRectF(x0, y0, x1 - x0, y1 - y0), Qt.AspectRatioMode.KeepAspectRatio)
+
+    def edit_project(self):
+        dlg = ProjectDialog(self.doc.project, self)
+        if dlg.exec():
+            self.doc.set_project_info(dlg.values())
+
+    def print_sheets(self):
+        if not self.doc.sheets:
+            QMessageBox.information(self, "Imprimir", "Crie uma folha na aba Folhas primeiro.")
+            self.tabs.setCurrentIndex(1)
+            return
+        self.composer.print_sheets()
 
     def zoom_extents(self):
         self.view2d.zoom_extents()
