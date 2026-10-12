@@ -9,6 +9,8 @@ PREVIEW = QColor("#ffd23f")
 SELECTION = QColor("#4da3ff")
 SNAP = QColor("#ffd23f")
 ICON = QColor("#dfe6ee")
+GRIP = QColor("#3d7bff")
+GRIP_HOT = QColor("#ff4d4d")
 
 
 def dark_palette() -> QPalette:

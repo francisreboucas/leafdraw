@@ -22,6 +22,8 @@ leafdraw/
     editing.py     offset, explodir, contorno de hachura (Shapely)
     coords.py      interpretação da entrada digitada
     dxf_io.py      importação/exportação DXF e DWG (ezdxf)
+    modify.py      aparar, estender, distribuir ao longo de caminhos
+    schedule.py    quantitativos e CSV
     commands.py    AddEntities / RemoveEntities / ReplaceEntities (QUndoCommand)
     catalog.py     catálogo de espécies (resources/catalog.json)
     fileio.py      arquivo .leaf (zip com document.json)
@@ -32,8 +34,9 @@ leafdraw/
     tools.py       ferramentas de desenho e de edição
     commandline.py linha de comando
     dxf_dialog.py  opções de importação
+    catalog_dialog.py editor do catálogo de espécies
     viewport3d.py  vista 3D (moderngl): câmera orbital, plantas por instancing
-    panels/        camadas, Gerenciador de Objetos (catálogo), propriedades
+    panels/        camadas, Gerenciador de Objetos (catálogo), propriedades, quantitativos
 ```
 
 O `Document` é a fonte única da verdade. As vistas 2D e 3D apenas reagem aos
@@ -50,6 +53,9 @@ Enter ou Espaço confirmam; Enter vazio termina a ferramenta ou repete o último
 | Texto, Cota, Hachura, Planta | T, COT, H, PLANTA |
 | Mover, Copiar, Rotacionar, Escalar, Espelhar | M, CO, RO, SC, MI |
 | Offset, Explodir, Apagar, Medir | O, X, E, DI |
+| Aparar, Estender | TR, EST |
+| Planta isolada, Maciço, Plantas em linha, Rótulo | PLANTA, MAC, LIN, ETQ |
+| Quantitativos, Catálogo de espécies | QUANT, CATALOGO |
 | Zoom extensão, Desfazer, Importar/Exportar DXF, Ajuda | Z, U, IMPORTAR/EXPORTAR, ? |
 
 Coordenadas: `10,5` (absoluta), `@3,4` (relativa), `@5<45` (polar), ou um número
@@ -58,7 +64,30 @@ solto para "distância na direção do cursor". Quando a ferramenta pede um núm
 como separador: `2,5;3`.
 
 Opções: polilinha `F` fecha; hachura `S D X L G P PE` escolhe o padrão e um número
-define o módulo.
+define o módulo; maciço `T`/`Q` (malha triangular ou quadrada) e um número define o
+espaçamento; plantas em linha `P` alterna entre "das pontas" e "centralizado".
+
+## Paisagismo
+
+- **Maciço** (MAC): clique dentro de uma área fechada; a espécie escolhida no
+  Gerenciador de Objetos é plantada em malha triangular ou quadrada, recuada meio
+  espaçamento das bordas. A quantidade de mudas é a contagem real da malha.
+  Espaçamento, malha e ângulo podem ser editados depois em Propriedades.
+  O maciço guarda o próprio contorno (não acompanha a polilinha usada para criá-lo).
+- **Plantas em linha** (LIN): clique numa linha, polilinha, arco ou círculo, ajuste o
+  espaçamento e confirme com Enter.
+- **Rótulo** (ETQ): selecione plantas/maciços e clique onde vai o texto; cria o texto
+  com a quantidade e linhas de chamada.
+- **Quantitativos**: painel com isoladas, mudas em maciço, área de maciço e total por
+  espécie, mais áreas de hachura por revestimento. Duplo clique seleciona a espécie no
+  desenho. Exporta CSV (`;` e vírgula decimal, abre direto no Excel).
+- **Catálogo**: crie, edite ou duplique espécies. Elas ficam no seu catálogo
+  (`catalogo_usuario.json` na pasta de dados do aplicativo); o catálogo embutido não é
+  alterado. O `.leaf` embute as espécies usadas, então o projeto abre igual em outra
+  máquina.
+- **Trocar espécie**: selecione plantas ou maciços e escolha outra espécie em Propriedades.
+- **Grips**: com objetos selecionados, arraste os quadrados azuis para mover vértices,
+  pontas, centros, raio ou a linha de cota.
 
 ## Atalhos
 
@@ -98,6 +127,6 @@ DWG funciona se o [ODA File Converter](https://www.opendesign.com/guestfiles/oda
 
 1. **Base** (feito): janela, docks, camadas, undo/redo, arquivo `.leaf`, 2D, 3D básico, catálogo
 2. **CAD 2D** (feito): arco, texto, cota, hachura, snaps, linha de comando, edição, DXF/DWG
-3. Paisagismo: distribuição de plantas em área e em linha, quantitativos, edição do catálogo, aparar/estender, grips
+3. **Paisagismo** (feito): maciços, plantas em linha, rótulos, quantitativos, catálogo editável, aparar/estender, grips
 4. Compositor de folhas: layouts A0 a A4, janelas de vista em escala, carimbo, legenda, PDF
 5. 3D: picking, gizmos 3D, terreno, modelos melhores de plantas

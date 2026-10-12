@@ -9,11 +9,13 @@ from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetricsF, QPainter, QPain
                            QPen, QPixmap, QPolygonF, QTransform)
 from PySide6.QtWidgets import QGraphicsItem
 
-from leafdraw.core.entities import Arc, Circle, Dimension, Entity, Hatch, Line, Plant, Polyline, Text
+from leafdraw.core.entities import (Arc, Circle, Dimension, Entity, Hatch, Line, Plant, PlantingArea, Polyline,
+                                    Text)
 from leafdraw.ui import theme
 from leafdraw.ui.symbols import paint_symbol, symbol_bounds, symbol_paths
 
 PICK_TOLERANCE_PX = 6
+MAX_PLANTING_DOTS = 5000  # acima disso o maciço é desenhado só com preenchimento
 TEXT_FONT = "Arial"
 TILE = 64  # px do ladrilho de hachura
 
@@ -136,14 +138,26 @@ def entity_fill(e: Entity) -> QPainterPath | None:
     if isinstance(e, Dimension):
         lay = e.layout()
         return text_path(e.label(), e.text_height, lay["text_center"], lay["angle"], center=True)
-    if isinstance(e, Hatch):
-        path = QPainterPath()
-        path.setFillRule(Qt.FillRule.OddEvenFill)
-        for loop in e.loops:
-            path.addPolygon(QPolygonF([QPointF(*v) for v in loop]))
-            path.closeSubpath()
-        return path
+    if isinstance(e, (Hatch, PlantingArea)):
+        return loops_path(e.loops)
     return None
+
+
+def loops_path(loops) -> QPainterPath:
+    path = QPainterPath()
+    path.setFillRule(Qt.FillRule.OddEvenFill)
+    for loop in loops:
+        path.addPolygon(QPolygonF([QPointF(*v) for v in loop]))
+        path.closeSubpath()
+    return path
+
+
+def planting_dots(e: PlantingArea, radius: float) -> QPainterPath:
+    path = QPainterPath()
+    if e.area * e.density <= MAX_PLANTING_DOTS:
+        for x, y in e.points():
+            path.addEllipse(QPointF(x, y), radius, radius)
+    return path
 
 
 class EntityItem(QGraphicsItem):
@@ -163,7 +177,8 @@ class EntityItem(QGraphicsItem):
         self.refresh()
 
     def species(self):
-        return self.view.catalog.get(self.entity.species) if isinstance(self.entity, Plant) else None
+        sid = getattr(self.entity, "species", None)
+        return self.view.catalog.get(sid) if sid else None
 
     def refresh(self):
         """Recalcula geometria e estado a partir da entidade e da camada."""
@@ -181,6 +196,18 @@ class EntityItem(QGraphicsItem):
             self._rect = symbol_bounds(r)
             self.setPos(*e.position)
             self.setZValue(2 + 1 / (1 + e.height))  # plantas menores por cima
+        elif isinstance(e, PlantingArea):
+            sp = self.species()
+            self.plant_color = QColor(e.color or (sp.cor if sp else "#6cc070"))
+            self._fill = loops_path(e.loops)
+            self._stroke = QPainterPath(self._fill)
+            r = min(e.spacing * 0.38, (sp.copa / 2) if sp else e.spacing * 0.38)
+            self._dots = planting_dots(e, r)
+            br = self._fill.boundingRect()
+            pad = max(br.width(), br.height(), 1.0) * 0.01
+            self._rect = br.adjusted(-pad, -pad, pad, pad)
+            self.setPos(0, 0)
+            self.setZValue(0.7)
         else:
             self._stroke = entity_path(e)
             self._fill = entity_fill(e)
@@ -203,7 +230,7 @@ class EntityItem(QGraphicsItem):
         return self._rect
 
     def shape(self) -> QPainterPath:
-        if isinstance(self.entity, (Plant, Hatch)):
+        if isinstance(self.entity, (Plant, Hatch, PlantingArea)):
             return self._fill if self._fill is not None else self._stroke
         path = QPainterPath()
         if not self._stroke.isEmpty():
@@ -235,6 +262,17 @@ class EntityItem(QGraphicsItem):
                 painter.drawRect(self._stroke.boundingRect())
             return
         color = theme.SELECTION if selected else self.color
+        if isinstance(e, PlantingArea):
+            c = QColor(self.plant_color)
+            c.setAlpha(40)
+            painter.fillPath(self._fill, QBrush(c))
+            c.setAlpha(170)
+            painter.fillPath(self._dots, QBrush(c))
+            painter.setPen(cosmetic_pen(theme.SELECTION if selected else self.plant_color,
+                                        2 if selected else 1.2, Qt.PenStyle.DashLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(self._stroke)
+            return
         if isinstance(e, Hatch):
             painter.fillPath(self._fill, self._brush)
             if selected:

@@ -4,7 +4,9 @@ import os
 from dataclasses import dataclass
 from typing import Callable
 
-from PySide6.QtCore import QSettings, QSize, Qt
+from pathlib import Path
+
+from PySide6.QtCore import QSettings, QSize, QStandardPaths, Qt
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QLabel, QMainWindow, QMenu,
                                QMessageBox, QSplitter, QStyle, QToolBar, QToolButton, QUndoView)
@@ -14,8 +16,10 @@ from leafdraw.core.catalog import default_catalog
 from leafdraw.core.commands import AddEntities, RemoveEntities
 from leafdraw.core.document import Document
 from leafdraw.core.dxf_io import dwg_supported, export_dxf, import_drawing, read_drawing
-from leafdraw.core.fileio import EXTENSION, load_document, save_document
+from leafdraw.core.fileio import EXTENSION, load_document, save_document, used_species
+from leafdraw.core.schedule import area_schedule, plant_schedule, to_csv
 from leafdraw.ui import tools as T
+from leafdraw.ui.catalog_dialog import CatalogDialog
 from leafdraw.ui.commandline import CommandLine
 from leafdraw.ui.dxf_dialog import DxfImportDialog
 from leafdraw.ui.icons import icon
@@ -23,6 +27,7 @@ from leafdraw.ui.items2d import SNAP_LABELS
 from leafdraw.ui.panels.catalog_panel import CatalogPanel
 from leafdraw.ui.panels.layers_panel import LayersPanel
 from leafdraw.ui.panels.properties_panel import PropertiesPanel
+from leafdraw.ui.panels.schedule_panel import SchedulePanel
 from leafdraw.ui.viewport2d import SNAP_MODES, Viewport2D
 from leafdraw.ui.viewport3d import Viewport3D
 
@@ -56,15 +61,30 @@ TOOL_COMMANDS = [
     ToolCommand("offset", "Offset", ("O", "OF", "OFFSET"), T.OffsetTool, "modify"),
     ToolCommand("explode", "Explodir", ("X", "EXP"), T.ExplodeTool, "modify"),
     ToolCommand("erase", "Apagar", ("E", "APAGAR"), T.EraseTool, "modify"),
+    ToolCommand("trim", "Aparar", ("TR", "AP", "APARAR"), T.TrimTool, "modify"),
+    ToolCommand("extend", "Estender", ("EST", "EXT", "ESTENDER"), T.ExtendTool, "modify"),
     ToolCommand("distance", "Medir distância", ("DI", "MED"), T.DistanceTool, "modify"),
+    ToolCommand("label", "Rótulo de plantas", ("ETQ", "ROTULO"), T.LabelTool, "landscape"),
 ]
+
+# ferramentas que dependem da espécie escolhida no Gerenciador de Objetos
+SPECIES_TOOLS = {
+    "plant": ("Planta isolada", ("PLANTA",), T.PlantTool),
+    "planting": ("Maciço", ("MAC", "MACICO"), T.PlantingTool),
+    "plantrow": ("Plantas em linha", ("LIN", "EMLINHA"), T.PlantRowTool),
+}
+
+
+def user_catalog_path() -> Path:
+    base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+    return Path(base) / "catalogo_usuario.json"
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.doc = Document(self)
-        self.catalog = default_catalog()
+        self.catalog = default_catalog(user_catalog_path())
         self.last_command: str | None = None
         self.resize(1500, 900)
 
@@ -91,7 +111,10 @@ class MainWindow(QMainWindow):
         v.cursorMoved.connect(self._on_cursor)
         self.cmdline.submitted.connect(self.on_command)
         self.cmdline.cancelled.connect(self._on_cmd_cancel)
-        self.catalog_panel.speciesActivated.connect(self.start_plant_tool)
+        self.catalog_panel.speciesActivated.connect(self.start_species_tool)
+        self.catalog_panel.editRequested.connect(self.edit_catalog)
+        self.schedule_panel.exportRequested.connect(self.export_schedule)
+        self.schedule_panel.speciesSelected.connect(self.select_species)
         self.cmdline.set_prompt(v.tool.hint())
 
         self._restore_settings()
@@ -120,6 +143,11 @@ class MainWindow(QMainWindow):
                                        "dock_catalog")
         self.props_panel = PropertiesPanel(self.doc, self.catalog, self.view2d)
         self.props_dock = self._dock("Propriedades", self.props_panel, A.RightDockWidgetArea, "dock_props")
+        self.schedule_panel = SchedulePanel(self.doc, self.catalog)
+        self.schedule_dock = self._dock("Quantitativos", self.schedule_panel, A.RightDockWidgetArea,
+                                        "dock_schedule")
+        self.tabifyDockWidget(self.props_dock, self.schedule_dock)
+        self.props_dock.raise_()
 
         self.cmdline = CommandLine()
         self.cmd_dock = self._dock("Linha de comando", self.cmdline, A.BottomDockWidgetArea, "dock_cmd")
@@ -171,12 +199,16 @@ class MainWindow(QMainWindow):
             a.triggered.connect(lambda _c=False, n=cmd.name: self.run_tool(n))
             self.tool_group.addAction(a)
             self.tool_actions[cmd.name] = a
-        a = self._action("Planta", None, icon_name="plant", checkable=True,
-                         tip="Inserir a espécie selecionada no Gerenciador de Objetos [PLANTA]")
-        a.triggered.connect(self._plant_from_catalog)
-        self.tool_group.addAction(a)
-        self.tool_actions["plant"] = a
+        for mode, (label, aliases, _cls) in SPECIES_TOOLS.items():
+            a = self._action(label, None, icon_name=mode, checkable=True,
+                             tip=f"{label} com a espécie escolhida no Gerenciador de Objetos [{', '.join(aliases)}]")
+            a.triggered.connect(lambda _c=False, m=mode: self._species_tool_from_catalog(m))
+            self.tool_group.addAction(a)
+            self.tool_actions[mode] = a
         self.tool_actions["select"].setChecked(True)
+        self.act_catalog = self._action("&Catálogo de espécies…", self.edit_catalog)
+        self.act_export_schedule = self._action("Exportar &quantitativos (CSV)…", self.export_schedule,
+                                                icon_name="schedule")
 
         self.act_zoom_ext = self._action("Zoom &extensão", self.zoom_extents, "Home", icon_name="zoom_extents")
         self.layout_group = QActionGroup(self)
@@ -222,12 +254,21 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addActions([self.act_delete, self.act_select_all])
 
-        draw = [self.tool_actions[c.name] for c in TOOL_COMMANDS if c.group == "draw"] + [self.tool_actions["plant"]]
+        draw = [self.tool_actions[c.name] for c in TOOL_COMMANDS if c.group == "draw"]
         modify = [self.tool_actions[c.name] for c in TOOL_COMMANDS if c.group == "modify"]
+        landscape = [self.tool_actions[m] for m in SPECIES_TOOLS] + [
+            self.tool_actions[c.name] for c in TOOL_COMMANDS if c.group == "landscape"]
         m = mb.addMenu("&Desenhar")
         m.addActions(draw)
         m = mb.addMenu("&Modificar")
         m.addActions(modify)
+        m = mb.addMenu("&Paisagismo")
+        m.addActions(landscape)
+        m.addSeparator()
+        m.addAction(self.schedule_dock.toggleViewAction())
+        m.addAction(self.act_export_schedule)
+        m.addSeparator()
+        m.addAction(self.act_catalog)
 
         m = mb.addMenu("&Ferramentas")
         m.addActions([self.act_snap_obj, self.act_snap_grid, self.act_ortho2d])
@@ -243,7 +284,8 @@ class MainWindow(QMainWindow):
         m.addAction(self.act_ortho)
 
         m = mb.addMenu("&Janelas")
-        for dock in (self.layers_dock, self.history_dock, self.catalog_dock, self.props_dock, self.cmd_dock):
+        for dock in (self.layers_dock, self.history_dock, self.catalog_dock, self.props_dock, self.schedule_dock,
+                     self.cmd_dock):
             m.addAction(dock.toggleViewAction())
 
         m = mb.addMenu("Aj&uda")
@@ -280,6 +322,7 @@ class MainWindow(QMainWindow):
 
         toolbar("Desenhar", "tb_draw", draw, Qt.ToolBarArea.LeftToolBarArea)
         toolbar("Modificar", "tb_modify", modify, Qt.ToolBarArea.LeftToolBarArea)
+        toolbar("Paisagismo", "tb_landscape", landscape, Qt.ToolBarArea.LeftToolBarArea)
 
     def _build_statusbar(self):
         sb = self.statusBar()
@@ -304,8 +347,12 @@ class MainWindow(QMainWindow):
         for cmd in TOOL_COMMANDS:
             for alias in (cmd.name.upper(), *cmd.aliases):
                 self.aliases[alias] = lambda n=cmd.name: self.run_tool(n)
+        for mode, (_label, aliases, _cls) in SPECIES_TOOLS.items():
+            for alias in aliases:
+                self.aliases[alias] = lambda m=mode: self._species_tool_from_catalog(m)
         extra = {
-            ("PLANTA",): self._plant_from_catalog,
+            ("CATALOGO",): self.edit_catalog,
+            ("QUANT", "QTD"): self.show_schedule,
             ("Z", "ZE", "ZOOM"): self.zoom_extents,
             ("U", "DESFAZER"): self.doc.undo_stack.undo,
             ("REFAZER", "REDO"): self.doc.undo_stack.redo,
@@ -360,26 +407,72 @@ class MainWindow(QMainWindow):
 
     def show_commands_help(self):
         lines = [f"{c.label}: {', '.join(c.aliases)}" for c in TOOL_COMMANDS]
-        lines += ["Planta: PLANTA", "Zoom extensão: Z, ZE", "Desfazer: U", "Importar DXF: IMPORTAR",
-                  "Exportar DXF: EXPORTAR"]
+        lines += [f"{label}: {', '.join(aliases)}" for label, aliases, _c in SPECIES_TOOLS.values()]
+        lines += ["Zoom extensão: Z, ZE", "Desfazer: U", "Importar DXF: IMPORTAR", "Exportar DXF: EXPORTAR",
+                  "Quantitativos: QUANT", "Catálogo: CATALOGO"]
         for line in lines:
             self.cmdline.log(line)
         self.cmdline.log("Coordenadas: x,y · @dx,dy · @dist<ângulo · número = distância na direção do cursor "
                          "· use ; como separador para decimais com vírgula (2,5;3)")
 
-    def start_plant_tool(self, species_id: str):
-        self.view2d.set_tool(T.PlantTool(self.view2d, species_id))
+    def start_species_tool(self, species_id: str, mode: str = "plant"):
+        self.view2d.set_tool(SPECIES_TOOLS[mode][2](self.view2d, species_id))
+        self.last_command = SPECIES_TOOLS[mode][1][0]
 
-    def _plant_from_catalog(self):
-        it = self.catalog_panel.tree.currentItem()
-        sid = it.data(0, Qt.ItemDataRole.UserRole) if it else None
+    def _species_tool_from_catalog(self, mode: str):
+        sid = self.catalog_panel.current_species()
         if sid:
-            self.start_plant_tool(sid)
+            self.start_species_tool(sid, mode)
         else:
             self.tool_actions[self.view2d.tool.name].setChecked(True)
             self.cmdline.log("Escolha uma espécie no Gerenciador de Objetos.", "error")
             self.catalog_dock.show()
             self.catalog_dock.raise_()
+
+    def edit_catalog(self):
+        dlg = CatalogDialog(self.catalog, self, select=self.catalog_panel.current_species(),
+                            in_use=used_species(self.doc))
+        dlg.exec()
+        if dlg.changed:
+            self._catalog_changed()
+
+    def _catalog_changed(self):
+        self.catalog_panel.populate()
+        self.view2d.refresh_items()
+        self.view3d.mark_dirty()
+        self.schedule_panel.refresh()
+        self.props_panel.refresh()
+
+    def show_schedule(self):
+        self.schedule_dock.show()
+        self.schedule_dock.raise_()
+
+    def export_schedule(self):
+        base = os.path.splitext(self.doc.file_path)[0] if self.doc.file_path else os.path.join(self._last_dir(), "projeto")
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar quantitativos", base + " - quantitativos.csv",
+                                              "CSV (*.csv)")
+        if not path:
+            return
+        csv = to_csv(plant_schedule(self.doc, self.catalog), area_schedule(self.doc))
+        try:
+            with open(path, "w", encoding="utf-8-sig", newline="") as f:  # BOM: o Excel reconhece UTF-8
+                f.write(csv)
+        except OSError as exc:
+            QMessageBox.critical(self, "Exportar quantitativos", f"Não foi possível salvar {path}:\n{exc}")
+            return
+        self.cmdline.log(f"Quantitativos exportados para {path}.", "result")
+
+    def select_species(self, sid: str):
+        v = self.view2d
+        v.set_tool(T.SelectTool(v))
+        v.scene().clearSelection()
+        n = 0
+        for it in v.items_by_id.values():
+            if getattr(it.entity, "species", None) == sid and it.isVisible():
+                it.setSelected(True)
+                n += 1
+        sp = self.catalog.get(sid)
+        self.cmdline.log(f"{n} objeto(s) de {sp.nome_popular if sp else sid} selecionado(s).", "result")
 
     def delete_selection(self):
         ids = self.view2d.selected_ids()
@@ -508,10 +601,14 @@ class MainWindow(QMainWindow):
             self.import_cad(path)
             return
         try:
-            load_document(self.doc, path)
+            added = load_document(self.doc, path, self.catalog)
         except Exception as exc:  # arquivo corrompido, versão incompatível…
             QMessageBox.critical(self, "Abrir projeto", f"Não foi possível abrir {path}:\n{exc}")
             return
+        if added:
+            self.catalog_panel.populate()
+            names = ", ".join(sp.nome_popular for sp in added)
+            self.cmdline.log(f"Espécies trazidas pelo projeto (não estão no seu catálogo): {names}.", "result")
         QSettings().setValue("last_dir", os.path.dirname(path))
         self.zoom_extents()
         self._update_title()
@@ -531,7 +628,7 @@ class MainWindow(QMainWindow):
 
     def _save_to(self, path: str) -> bool:
         try:
-            save_document(self.doc, path)
+            save_document(self.doc, path, self.catalog)
         except OSError as exc:
             QMessageBox.critical(self, "Salvar projeto", f"Não foi possível salvar {path}:\n{exc}")
             return False

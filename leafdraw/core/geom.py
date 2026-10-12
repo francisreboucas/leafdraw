@@ -237,6 +237,46 @@ def tessellate(pr: Primitive, max_step_deg: float = 5.0) -> list[Point]:
     return [polar(pr.c, pr.r, pr.a0 + sw * i / n) for i in range(n + 1)]
 
 
+def prim_length(pr: Primitive) -> float:
+    if isinstance(pr, Seg):
+        return math.dist(pr.a, pr.b)
+    return math.radians(sweep(pr.a0, pr.a1)) * pr.r
+
+
+def point_on(pr: Primitive, d: float) -> Point:
+    """Ponto a ``d`` metros do início da primitiva."""
+    if isinstance(pr, Seg):
+        L = math.dist(pr.a, pr.b) or 1.0
+        t = d / L
+        return (pr.a[0] + (pr.b[0] - pr.a[0]) * t, pr.a[1] + (pr.b[1] - pr.a[1]) * t)
+    return polar(pr.c, pr.r, pr.a0 + math.degrees(d / pr.r))
+
+
+def point_along(prims: list[Primitive], d: float) -> Point:
+    """Ponto a ``d`` metros do início de uma sequência de primitivas encadeadas."""
+    for pr in prims:
+        L = prim_length(pr)
+        if d <= L + 1e-12:
+            return point_on(pr, max(d, 0.0))
+        d -= L
+    last = prims[-1]
+    return point_on(last, prim_length(last))
+
+
+def param_on(pr: Primitive, p: Point) -> float:
+    """Distância ao longo da primitiva até o ponto dela mais próximo de ``p``."""
+    if isinstance(pr, Seg):
+        (ax, ay), (bx, by) = pr.a, pr.b
+        dx, dy = bx - ax, by - ay
+        L2 = dx * dx + dy * dy
+        if L2 < EPS:
+            return 0.0
+        t = max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L2))
+        return t * math.sqrt(L2)
+    q = nearest_on(pr, p)
+    return math.radians(norm_angle(angle_of(pr.c, q) - pr.a0)) * pr.r
+
+
 def circle_from_3_points(p1: Point, p2: Point, p3: Point) -> tuple[Point, float] | None:
     (ax, ay), (bx, by), (cx, cy) = p1, p2, p3
     d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))

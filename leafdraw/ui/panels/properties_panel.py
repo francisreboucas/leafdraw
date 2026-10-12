@@ -9,9 +9,10 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBo
                                QLineEdit, QMenu, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from leafdraw.core.commands import ReplaceEntities
-from leafdraw.core.entities import (HATCH_PATTERNS, KIND_NAMES, Arc, Circle, Dimension, Hatch, Line, Plant,
-                                    Polyline, Text)
+from leafdraw.core.entities import (HATCH_PATTERNS, KIND_NAMES, PLANTING_LAYOUTS, Arc, Circle, Dimension, Hatch,
+                                    Line, Plant, PlantingArea, Polyline, Text)
 from leafdraw.ui.icons import color_icon
+from leafdraw.ui.symbols import species_icon
 
 
 def fmt(v: float, unit: str = "m") -> str:
@@ -85,6 +86,8 @@ class PropertiesPanel(QWidget):
                             else f"{len(ents)} objetos selecionados")
         self._layer_row(ents)
         self._color_row(ents)
+        if all(isinstance(e, (Plant, PlantingArea)) for e in ents):
+            self._species_row(ents)
         if len(ents) == 1:
             self._single(ents[0])
         else:
@@ -133,6 +136,28 @@ class PropertiesPanel(QWidget):
         menu.addAction("Escolher…", choose)
         btn.setMenu(menu)
         self.form.addRow("Cor", btn)
+
+    def _species_row(self, ents):
+        combo = QComboBox()
+        species = sorted(self.catalog.all(), key=lambda s: s.nome_popular)
+        for sp in species:
+            combo.addItem(species_icon(sp.simbolo, sp.cor), sp.nome_popular, sp.id)
+        common = {e.species for e in ents}
+        ids = [sp.id for sp in species]
+        if len(common) == 1 and next(iter(common)) in ids:
+            combo.setCurrentIndex(ids.index(next(iter(common))))
+        else:
+            combo.setCurrentIndex(-1)
+            combo.setPlaceholderText("(várias)")
+
+        def change(idx):
+            sp = self.catalog.get(combo.itemData(idx))
+            new = [replace(e, species=sp.id, canopy=sp.copa, height=sp.altura) if isinstance(e, Plant)
+                   else replace(e, species=sp.id) for e in ents]
+            self._push(new, f"Trocar espécie para {sp.nome_popular}")
+
+        combo.activated.connect(change)
+        self.form.addRow("Espécie", combo)
 
     def _single(self, e):
         add = self.form.addRow
@@ -204,11 +229,29 @@ class PropertiesPanel(QWidget):
             ang.valueChanged.connect(lambda v: self._push([replace(e, angle=v)], "Ângulo da hachura"))
             add("Ângulo", ang)
             add("Área", QLabel(fmt(e.area, "m²")))
+        elif isinstance(e, PlantingArea):
+            sp = self.catalog.get(e.species)
+            if sp:
+                add("", self._italic(sp.nome_cientifico))
+            sc = _spin(e.spacing, maximum=20)
+            sc.valueChanged.connect(lambda v: self._push([replace(e, spacing=v)], "Espaçamento do maciço"))
+            add("Espaçamento", sc)
+            lay = QComboBox()
+            for key, name in PLANTING_LAYOUTS.items():
+                lay.addItem(name, key)
+            lay.setCurrentIndex(list(PLANTING_LAYOUTS).index(e.layout))
+            lay.activated.connect(lambda i: self._push([replace(e, layout=lay.itemData(i))], "Malha do maciço"))
+            add("Malha", lay)
+            ang = _angle_spin(e.angle)
+            ang.valueChanged.connect(lambda v: self._push([replace(e, angle=v)], "Ângulo da malha"))
+            add("Ângulo", ang)
+            add("Área", QLabel(fmt(e.area, "m²")))
+            add("Densidade", QLabel(fmt(e.density, "mudas/m²")))
+            add("Mudas", QLabel(f"<b>{e.count}</b>"))
         elif isinstance(e, Plant):
             sp = self.catalog.get(e.species)
-            name = QLabel(f"{sp.nome_popular}<br><i>{sp.nome_cientifico}</i>" if sp else e.species)
-            name.setTextFormat(Qt.TextFormat.RichText)
-            add("Espécie", name)
+            if sp:
+                add("", self._italic(sp.nome_cientifico))
             canopy = _spin(e.canopy, maximum=60)
             canopy.valueChanged.connect(lambda v: self._push([replace(e, canopy=v)], "Diâmetro da copa"))
             add("Copa (Ø)", canopy)
@@ -217,3 +260,9 @@ class PropertiesPanel(QWidget):
             add("Altura", height)
             x, y = e.position
             add("Posição", QLabel(f"X {fmt(x)}   Y {fmt(y)}"))
+
+    @staticmethod
+    def _italic(text: str) -> QLabel:
+        lab = QLabel(f"<i>{text}</i>")
+        lab.setTextFormat(Qt.TextFormat.RichText)
+        return lab

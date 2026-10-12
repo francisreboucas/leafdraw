@@ -14,11 +14,12 @@ from PySide6.QtWidgets import QGraphicsPathItem, QGraphicsView, QInputDialog
 
 from leafdraw.core.commands import AddEntities, RemoveEntities, ReplaceEntities
 from leafdraw.core.editing import OFFSET_KINDS, explode_entity, find_boundary, offset_entity
-from leafdraw.core.entities import (HATCH_PATTERNS, Arc, Circle, Dimension, Hatch, Line, Plant, Polyline,
-                                    Text)
-from leafdraw.core.geom import Affine, angle_of, arc_from_3_points, point_side
+from leafdraw.core.entities import (HATCH_PATTERNS, PLANTING_LAYOUTS, Arc, Circle, Dimension, Hatch, Line, Plant,
+                                    PlantingArea, Polyline, Text)
+from leafdraw.core.modify import EXTEND_KINDS, PATH_KINDS, TRIM_KINDS, distribute_along, extend_entity, trim_entity
+from leafdraw.core.geom import Affine, angle_of, arc_from_3_points, nearest_on, point_side
 from leafdraw.ui import theme
-from leafdraw.ui.items2d import add_arc, cosmetic_pen, entity_fill, entity_path
+from leafdraw.ui.items2d import EntityItem, add_arc, cosmetic_pen, entity_fill, entity_path
 from leafdraw.ui.symbols import symbol_paths
 
 MIN_SIZE = 1e-6
@@ -123,23 +124,47 @@ class SelectTool(Tool):
     def __init__(self, view):
         super().__init__(view)
         self.drag = None
+        self.grip = None
+        self.preview: QGraphicsPathItem | None = None
 
     def hint(self):
-        return "Comando: digite um comando ou selecione objetos. Arraste o gizmo para mover."
+        return "Comando: digite um comando ou selecione objetos. Arraste o gizmo ou os grips para editar."
+
+    def deactivate(self):
+        self._clear_preview()
+        self.view.set_hover_grip(None)
+
+    def base_point(self):
+        return QPointF(*self.grip["origin"]) if self.grip else None
+
+    def _clear_preview(self):
+        if self.preview is not None:
+            self.view.scene().removeItem(self.preview)
+            self.preview = None
 
     def drag_mode(self):
         return RUBBER_BAND
 
     def wants_snap(self):
-        return self.drag is not None
+        return self.drag is not None or self.grip is not None
 
     def shows_gizmo(self):
-        return True
+        return self.grip is None
 
     def press(self, e, p):
         if e.button() != Qt.MouseButton.LeftButton:
             return False
         v = self.view
+        hit = v.grip_at(e.position())
+        if hit is not None:
+            item, index = hit
+            self.grip = {"item": item, "index": index, "origin": item.entity.grips()[index]}
+            self.preview = QGraphicsPathItem()
+            self.preview.setPen(cosmetic_pen(theme.PREVIEW, 1, Qt.PenStyle.DashLine))
+            self.preview.setZValue(1500)
+            v.scene().addItem(self.preview)
+            v.gizmo.hide()
+            return True
         handle = v.gizmo.handle_at(v, e.position())
         if handle:
             items = v.selected_items()
@@ -159,8 +184,13 @@ class SelectTool(Tool):
 
     def move(self, e, p):
         v = self.view
+        if self.grip is not None:
+            new = self.grip["item"].entity.moved_grip(self.grip["index"], _pt(p))
+            self.preview.setPath(preview_shape(new, v.catalog) if new is not None else QPainterPath())
+            return True
         if self.drag is None:
             if e is not None:
+                v.set_hover_grip(v.grip_at(e.position()))
                 handle = v.gizmo.handle_at(v, e.position())
                 v.gizmo.set_hover(handle)
                 v.viewport().setCursor(Qt.CursorShape.SizeAllCursor if handle else self.cursor)
@@ -172,6 +202,15 @@ class SelectTool(Tool):
         return True
 
     def release(self, e, p):
+        if self.grip is not None and e.button() == Qt.MouseButton.LeftButton:
+            g, self.grip = self.grip, None
+            self._clear_preview()
+            ent = g["item"].entity
+            new = ent.moved_grip(g["index"], _pt(p))
+            if new is not None and new != ent:
+                self.doc.undo_stack.push(ReplaceEntities(self.doc, [new], "Editar por grip"))
+            self.view.update_gizmo()
+            return True
         if self.drag is None or e.button() != Qt.MouseButton.LeftButton:
             return False
         d = self._delta(p)
@@ -190,11 +229,48 @@ class SelectTool(Tool):
         self.view.exclude_from_snap([])
 
     def cancel(self):
+        if self.grip is not None:
+            self.grip = None
+            self._clear_preview()
+            self.view.update_gizmo()
+            return True
         if self.drag is None:
             return False
         self._restore()
         self.drag = None
         return True
+
+
+def preview_shape(e, catalog) -> QPainterPath:
+    """Contorno de uma entidade (ainda não desenhada) para prévias."""
+    if isinstance(e, Plant):
+        sp = catalog.get(e.species)
+        outline, _ = symbol_paths(sp.simbolo if sp else "arvore", e.canopy / 2)
+        return outline.translated(*e.position)
+    path = entity_path(e)
+    fill = entity_fill(e)
+    if fill is not None:
+        path.addPath(fill)
+    return path
+
+
+def boundary_at(view, p: QPointF):
+    """Contorno fechado (com furos) em volta de ``p``, a partir do que está visível."""
+    view_rect = view.mapToScene(view.viewport().rect()).boundingRect()
+    cands = [it.entity for it in view.items_by_id.values()
+             if it.isVisible() and not isinstance(it.entity, (Plant, Text, Hatch, PlantingArea))
+             and it.sceneBoundingRect().intersects(view_rect)]
+    return find_boundary(cands, _pt(p))
+
+
+def _cutting_entities(view, rect: QRectF, exclude) -> list:
+    """Primitivas de corte/limite: geometria visível em ``rect`` (sem plantas, textos e preenchimentos)."""
+    prims = []
+    for it in view.scene().items(rect):
+        if (isinstance(it, EntityItem) and it is not exclude and it.isVisible()
+                and not isinstance(it.entity, (Plant, Text, Hatch, PlantingArea, Dimension))):
+            prims += it.entity.primitives()
+    return prims
 
 
 class DrawTool(Tool):
@@ -564,11 +640,7 @@ class HatchTool(DrawTool):
         return True
 
     def add_point(self, p):
-        view_rect = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
-        cands = [it.entity for it in self.view.items_by_id.values()
-                 if it.isVisible() and not isinstance(it.entity, (Plant, Text, Hatch))
-                 and it.sceneBoundingRect().intersects(view_rect)]
-        loops = find_boundary(cands, _pt(p))
+        loops = boundary_at(self.view, p)
         if not loops:
             self.message("Hachura: nenhuma área fechada encontrada nesse ponto.")
             return
@@ -961,3 +1033,259 @@ class OffsetTool(DrawTool):
             self.refresh_preview()
             return True
         return super().cancel()
+
+
+# --- paisagismo -----------------------------------------------------------
+
+class PlantingTool(DrawTool):
+    """Maciço: clique dentro de uma área fechada para plantá-la em malha."""
+
+    name = "planting"
+    layout = "triangular"
+
+    def __init__(self, view, species_id: str):
+        super().__init__(view)
+        self.species = view.catalog.get(species_id)
+        self.spacing = self.species.copa
+
+    def hint(self):
+        lay = PLANTING_LAYOUTS[PlantingTool.layout].split(" ")[0].lower()
+        return (f"Maciço de {self.species.nome_popular} (espaçamento {fmt(self.spacing)} m, {lay}): "
+                f"clique dentro de uma área fechada [número = espaçamento; T = triangular, Q = quadrado]")
+
+    def expects(self):
+        return "point_value"
+
+    def wants_snap(self):
+        return False
+
+    def input_value(self, v):
+        if v <= 0:
+            return False
+        self.spacing = v
+        self._hint_changed()
+        return True
+
+    def input_text(self, s):
+        lay = {"T": "triangular", "Q": "square"}.get(s.upper())
+        if lay is None:
+            return False
+        PlantingTool.layout = lay
+        self._hint_changed()
+        return True
+
+    def add_point(self, p):
+        loops = boundary_at(self.view, p)
+        if not loops:
+            self.message("Maciço: nenhuma área fechada encontrada nesse ponto.")
+            return
+        pa = PlantingArea(loops=loops, species=self.species.id, spacing=self.spacing, layout=PlantingTool.layout)
+        if pa.count == 0:
+            self.message("Maciço: a área é pequena demais para esse espaçamento.")
+            return
+        self.commit([pa], f"Maciço de {self.species.nome_popular}")
+        self.message(f"Maciço: {pa.count} mudas de {self.species.nome_popular} em {fmt(pa.area)} m² "
+                     f"({fmt(pa.density, 1)} mudas/m²).")
+
+    def finish(self):
+        self.view.request_select()
+
+
+class PlantRowTool(DrawTool):
+    """Plantas em linha ao longo de um caminho existente (cerca viva, alameda)."""
+
+    name = "plantrow"
+    from_ends = False
+
+    def __init__(self, view, species_id: str):
+        super().__init__(view)
+        self.species = view.catalog.get(species_id)
+        self.spacing = self.species.copa
+        self.path_item = None
+
+    def hint(self):
+        if self.path_item is None:
+            return f"Plantas em linha ({self.species.nome_popular}): clique numa linha, polilinha, arco ou círculo"
+        mode = "das pontas" if PlantRowTool.from_ends else "centralizado"
+        n = len(self._positions())
+        return (f"Plantas em linha: {n} × {self.species.nome_popular} a cada {fmt(self.spacing)} m ({mode}). "
+                f"Enter confirma [número = espaçamento; P = pontas/centralizado]")
+
+    def expects(self):
+        return "point" if self.path_item is None else "value"
+
+    def wants_snap(self):
+        return False
+
+    def _positions(self):
+        if self.path_item is None:
+            return []
+        return distribute_along(self.path_item.entity, self.spacing, PlantRowTool.from_ends)
+
+    def add_point(self, p):
+        if self.path_item is None:
+            self.path_item = self.view.pick(p, PATH_KINDS)
+        self.refresh_preview()
+
+    def input_value(self, v):
+        if self.path_item is None or v <= 0:
+            return False
+        self.spacing = v
+        self._hint_changed()
+        self.refresh_preview()
+        return True
+
+    def input_text(self, s):
+        if s.upper() != "P" or self.path_item is None:
+            return False
+        PlantRowTool.from_ends = not PlantRowTool.from_ends
+        self._hint_changed()
+        self.refresh_preview()
+        return True
+
+    def refresh_preview(self):
+        if self.preview is None:
+            return
+        path = QPainterPath()
+        outline, _ = symbol_paths(self.species.simbolo, self.species.copa / 2)
+        for x, y in self._positions():
+            path.addPath(outline.translated(x, y))
+        self.preview.setPath(path)
+
+    def finish(self):
+        if self.path_item is None:
+            self.view.request_select()
+            return
+        sp = self.species
+        plants = [Plant(position=pos, species=sp.id, canopy=sp.copa, height=sp.altura) for pos in self._positions()]
+        if plants:
+            self.commit(plants, f"{len(plants)} × {sp.nome_popular} em linha")
+            self.message(f"Plantas em linha: {len(plants)} × {sp.nome_popular}.")
+        self.path_item = None
+        self.reset()
+
+    def cancel(self):
+        if self.path_item is None:
+            return False
+        self.path_item = None
+        self.reset()
+        return True
+
+
+class TrimTool(DrawTool):
+    name = "trim"
+
+    def hint(self):
+        return "Aparar: clique no trecho a remover (repete; Enter encerra)"
+
+    def wants_snap(self):
+        return False
+
+    def add_point(self, p):
+        it = self.view.pick(p, TRIM_KINDS)
+        if it is None:
+            return
+        cutters = _cutting_entities(self.view, it.sceneBoundingRect(), it)
+        parts = trim_entity(it.entity, _pt(p), cutters)
+        if parts is None:
+            self.message("Aparar: nenhuma interseção com outros objetos.")
+            return
+        replace_with(self.doc, it.entity, parts, "Aparar")
+
+    def finish(self):
+        self.view.request_select()
+
+
+class ExtendTool(DrawTool):
+    name = "extend"
+
+    def hint(self):
+        return "Estender: clique perto da ponta a estender (repete; Enter encerra)"
+
+    def wants_snap(self):
+        return False
+
+    def add_point(self, p):
+        it = self.view.pick(p, EXTEND_KINDS)
+        if it is None:
+            return
+        view_rect = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+        new = extend_entity(it.entity, _pt(p), _cutting_entities(self.view, view_rect, it))
+        if new is None:
+            self.message("Estender: nenhum limite visível nessa direção.")
+            return
+        self.doc.undo_stack.push(ReplaceEntities(self.doc, [new], "Estender"))
+
+    def finish(self):
+        self.view.request_select()
+
+
+def replace_with(doc, old, parts, text):
+    stack = doc.undo_stack
+    stack.beginMacro(text)
+    stack.push(RemoveEntities(doc, [old.id]))
+    if parts:
+        stack.push(AddEntities(doc, parts))
+    stack.endMacro()
+
+
+class LabelTool(EditTool):
+    """Rótulo de plantas: texto com a quantidade e linhas de chamada."""
+
+    name = "label"
+    label = "Rótulo"
+
+    def entities(self):
+        return [e for e in super().entities() if isinstance(e, (Plant, PlantingArea))]
+
+    def on_targets(self):
+        if not self.entities():
+            self.message("Rótulo: selecione plantas ou maciços.")
+            self.view.request_select()
+
+    def step_hint(self):
+        return "Rótulo: clique a posição do texto"
+
+    def _lines(self) -> list[str]:
+        counts: dict[str, int] = {}
+        for e in self.entities():
+            counts[e.species] = counts.get(e.species, 0) + (e.count if isinstance(e, PlantingArea) else 1)
+        out = []
+        for sid, n in counts.items():
+            sp = self.view.catalog.get(sid)
+            out.append(f"{n} {sp.nome_popular if sp else sid}")
+        return out
+
+    def _leaders(self, p: QPointF) -> list[tuple]:
+        P = _pt(p)
+        segs = []
+        for e in self.entities():
+            if isinstance(e, Plant):
+                c, r = e.position, e.canopy / 2
+                d = math.dist(c, P)
+                if d <= r:
+                    continue
+                end = (c[0] + (P[0] - c[0]) * r / d, c[1] + (P[1] - c[1]) * r / d)
+            else:
+                end = min((nearest_on(pr, P) for pr in e.primitives()), key=lambda q: math.dist(q, P))
+            segs.append((P, end))
+        return segs
+
+    def preview_path(self, cursor):
+        path = QPainterPath()
+        if self.selecting:
+            return path
+        for a, b in self._leaders(cursor):
+            path.moveTo(*a)
+            path.lineTo(*b)
+        h = TextTool.height
+        path.addPath(entity_fill(Text(position=(cursor.x() + h * 0.4, cursor.y() + h * 0.4),
+                                      text="\n".join(self._lines()), height=h)))
+        return path
+
+    def add_point(self, p):
+        h = TextTool.height
+        ents = [Line(p1=a, p2=b) for a, b in self._leaders(p)]
+        ents.append(Text(position=(p.x() + h * 0.4, p.y() + h * 0.4), text="\n".join(self._lines()), height=h))
+        self.commit(ents, "Rótulo de plantas")
+        self.view.request_select()

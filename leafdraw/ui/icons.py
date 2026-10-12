@@ -159,6 +159,41 @@ def icon(name: str) -> QIcon:
         p.setPen(QPen(theme.ICON, 2))
         for x in range(12, 56, 8):
             p.drawLine(x, 22, x, 32 if (x // 8) % 2 else 28)
+    elif name == "planting":
+        p.drawRect(QRectF(6, 6, 52, 52))
+        p.setBrush(QBrush(QColor("#6cc070")))
+        p.setPen(Qt.PenStyle.NoPen)
+        for j, y in enumerate((16, 30, 44)):
+            for x in ((16, 30, 44) if j % 2 == 0 else (23, 37, 51))[: 3 if j % 2 == 0 else 2]:
+                p.drawEllipse(QPointF(x, y), 5, 5)
+    elif name == "plantrow":
+        p.drawLine(4, 50, 60, 50)
+        p.setBrush(QBrush(QColor("#6cc070")))
+        p.setPen(Qt.PenStyle.NoPen)
+        for x in (12, 32, 52):
+            p.drawEllipse(QPointF(x, 34), 9, 9)
+    elif name == "trim":
+        p.drawLine(32, 4, 32, 60)
+        p.drawLine(4, 32, 26, 32)
+        p.setPen(QPen(theme.ICON, 3, Qt.PenStyle.DotLine))
+        p.drawLine(38, 32, 60, 32)
+    elif name == "extend":
+        p.drawLine(54, 4, 54, 60)
+        p.drawLine(6, 32, 26, 32)
+        p.setPen(QPen(theme.ICON, 3, Qt.PenStyle.DashLine))
+        p.drawLine(28, 32, 50, 32)
+    elif name == "label":
+        p.translate(18, 40)
+        paint_symbol(p, "arvore", 14, QColor("#6cc070"))
+        p.resetTransform()
+        p.setPen(pen)
+        p.drawLine(28, 32, 44, 16)
+        p.drawLine(44, 16, 60, 16)
+    elif name == "schedule":
+        p.drawRect(QRectF(8, 8, 48, 48))
+        for y in (20, 32, 44):
+            p.drawLine(8, y, 56, y)
+        p.drawLine(24, 8, 24, 56)
     elif name in ("import", "export"):
         p.drawRect(QRectF(8, 36, 48, 20))
         y0, y1 = (6, 30) if name == "import" else (30, 6)

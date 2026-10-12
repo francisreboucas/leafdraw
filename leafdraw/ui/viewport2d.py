@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
 from leafdraw.core.commands import AddEntities
@@ -28,6 +28,8 @@ ZOOM_RANGE = (0.02, 20_000.0)  # px por metro
 SNAP_MODES = ("end", "mid", "center", "quad", "int", "perp", "near")
 DEFAULT_SNAP_MODES = {"end", "mid", "center", "quad", "int", "perp"}
 MAX_SNAP_PRIMITIVES = 60
+MAX_GRIP_ENTITIES = 100
+GRIP_PX = 4  # meia largura do quadrado do grip
 
 
 class Viewport2D(QGraphicsView):
@@ -49,6 +51,7 @@ class Viewport2D(QGraphicsView):
         self.last_cursor = QPointF()
         self._pan_last: QPointF | None = None
         self._press_pos: QPointF | None = None
+        self._hover_grip = None
         self._snap_excluded: set = set()
 
         scene = QGraphicsScene(-SCENE_HALF, -SCENE_HALF, 2 * SCENE_HALF, 2 * SCENE_HALF, self)
@@ -111,10 +114,13 @@ class Viewport2D(QGraphicsView):
             if it.isSelected():
                 self.update_gizmo()
 
-    def _on_layers(self):
+    def refresh_items(self):
+        """Redesenha tudo (mudou camada, catálogo…)."""
         for it in self.items_by_id.values():
             it.refresh()
         self.update_gizmo()
+
+    _on_layers = refresh_items
 
     # --- seleção ----------------------------------------------------------
 
@@ -152,6 +158,48 @@ class Viewport2D(QGraphicsView):
             self.scene().clearSelection()
             hit.setSelected(True)
         return True
+
+    # --- grips ------------------------------------------------------------
+
+    def _grip_items(self) -> list[EntityItem]:
+        if not self.tool.is_select:
+            return []
+        items = self.selected_items()
+        return items if len(items) <= MAX_GRIP_ENTITIES else []
+
+    def grip_at(self, view_pos: QPointF):
+        """(item, índice) do grip sob a posição de tela, ou None."""
+        best, best_d = None, GRIP_PX + 2
+        for it in self._grip_items():
+            for i, (x, y) in enumerate(it.entity.grips()):
+                q = self.mapFromScene(QPointF(x, y))
+                d = max(abs(q.x() - view_pos.x()), abs(q.y() - view_pos.y()))
+                if d <= best_d:
+                    best, best_d = (it, i), d
+        return best
+
+    def set_hover_grip(self, hit):
+        key = (hit[0].entity.id, hit[1]) if hit else None
+        if key != self._hover_grip:
+            self._hover_grip = key
+            self.viewport().update()
+
+    def drawForeground(self, painter: QPainter, rect: QRectF):
+        items = self._grip_items()
+        if not items:
+            return
+        painter.save()
+        painter.resetTransform()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        h = GRIP_PX
+        for it in items:
+            for i, (x, y) in enumerate(it.entity.grips()):
+                q = self.mapFromScene(QPointF(x, y))
+                hot = self._hover_grip == (it.entity.id, i)
+                painter.setPen(QColor(10, 10, 10))
+                painter.setBrush(theme.GRIP_HOT if hot else theme.GRIP)
+                painter.drawRect(q.x() - h, q.y() - h, 2 * h, 2 * h)
+        painter.restore()
 
     def update_gizmo(self):
         items = self.selected_items()

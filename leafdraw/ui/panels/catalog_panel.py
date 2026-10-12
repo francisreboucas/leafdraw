@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QByteArray, QMimeData, QSize, Qt, Signal
 from PySide6.QtGui import QDrag, QFont
-from PySide6.QtWidgets import (QAbstractItemView, QHeaderView, QLabel, QLineEdit, QPushButton, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from leafdraw.ui.symbols import species_icon
 from leafdraw.ui.viewport2d import SPECIES_MIME
@@ -31,7 +31,9 @@ class SpeciesTree(QTreeWidget):
 
 
 class CatalogPanel(QWidget):
-    speciesActivated = Signal(str)
+    # (id da espécie, modo: "plant" | "planting" | "plantrow")
+    speciesActivated = Signal(str, str)
+    editRequested = Signal()
 
     def __init__(self, catalog, parent=None):
         super().__init__(parent)
@@ -50,7 +52,7 @@ class CatalogPanel(QWidget):
         self.tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.tree.header().setStretchLastSection(False)
         self.tree.currentItemChanged.connect(self._show_details)
-        self.tree.itemDoubleClicked.connect(lambda it, _c: self._activate(it))
+        self.tree.itemDoubleClicked.connect(lambda it, _c: self._activate("plant"))
 
         self.details = QLabel()
         self.details.setWordWrap(True)
@@ -58,19 +60,32 @@ class CatalogPanel(QWidget):
         self.details.setMinimumHeight(70)
         self.details.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
-        self.insert_btn = QPushButton("Inserir no desenho")
-        self.insert_btn.setEnabled(False)
-        self.insert_btn.clicked.connect(lambda: self._activate(self.tree.currentItem()))
+        self.mode_buttons = []
+        row = QHBoxLayout()
+        for mode, text, tip in (("plant", "Isolada", "Inserir plantas isoladas (duplo clique ou arrastar)"),
+                                ("planting", "Maciço", "Plantar uma área fechada em malha [MAC]"),
+                                ("plantrow", "Em linha", "Distribuir ao longo de uma linha [LIN]")):
+            b = QPushButton(text)
+            b.setToolTip(tip)
+            b.setEnabled(False)
+            b.clicked.connect(lambda _c=False, m=mode: self._activate(m))
+            row.addWidget(b)
+            self.mode_buttons.append(b)
+        edit = QPushButton("Editar catálogo…")
+        edit.clicked.connect(self.editRequested)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.search)
         layout.addWidget(self.tree, 1)
         layout.addWidget(self.details)
-        layout.addWidget(self.insert_btn)
-        self._populate()
+        layout.addLayout(row)
+        layout.addWidget(edit)
+        self.populate()
 
-    def _populate(self):
+    def populate(self, select: str | None = None):
+        current = select or self.current_species()
+        self.tree.clear()
         bold = QFont(self.tree.font())
         bold.setBold(True)
         for cat in self.catalog.categories():
@@ -86,9 +101,16 @@ class CatalogPanel(QWidget):
                 for col in (1, 2):
                     it.setTextAlignment(col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 group.addChild(it)
+                if sp.id == current:
+                    self.tree.setCurrentItem(it)
         self.tree.expandAll()
         for col in (1, 2):
             self.tree.resizeColumnToContents(col)
+        self._filter(self.search.text())
+
+    def current_species(self) -> str | None:
+        it = self.tree.currentItem()
+        return it.data(0, ROLE_ID) if it else None
 
     def _filter(self, text: str):
         text = text.strip().lower()
@@ -104,18 +126,21 @@ class CatalogPanel(QWidget):
             group.setHidden(visible == 0)
 
     def _show_details(self, it, _prev=None):
-        sp = self.catalog.get(it.data(0, ROLE_ID)) if it else None
-        self.insert_btn.setEnabled(sp is not None)
+        sp = self.catalog.get(it.data(0, ROLE_ID)) if it and it.data(0, ROLE_ID) else None
+        for b in self.mode_buttons:
+            b.setEnabled(sp is not None)
         if sp is None:
             self.details.clear()
             return
+        origin = self.catalog.origin(sp.id)
+        tag = f" <span style='color:#e0b050'>[{origin}]</span>" if origin != "embutida" else ""
         self.details.setText(
-            f"<b>{sp.nome_popular}</b> — <i>{sp.nome_cientifico}</i><br>"
+            f"<b>{sp.nome_popular}</b> — <i>{sp.nome_cientifico}</i>{tag}<br>"
             f"Altura {fmt_m(sp.altura)} · Copa {fmt_m(sp.copa)} · {sp.insolacao}<br>"
             f"<span style='color:#9aa5b1'>{sp.notas}</span>"
         )
 
-    def _activate(self, it):
-        sid = it.data(0, ROLE_ID) if it else None
+    def _activate(self, mode: str):
+        sid = self.current_species()
         if sid:
-            self.speciesActivated.emit(sid)
+            self.speciesActivated.emit(sid, mode)

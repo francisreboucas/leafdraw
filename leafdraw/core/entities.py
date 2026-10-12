@@ -8,10 +8,15 @@ from __future__ import annotations
 import copy
 import math
 import uuid
+from functools import lru_cache
 from dataclasses import dataclass, field, fields, replace
 from typing import ClassVar
 
-from leafdraw.core.geom import Affine, ArcP, Seg, angle_of, norm_angle, polar, sweep
+from shapely.geometry import Point as SPoint, Polygon
+from shapely.prepared import prep
+
+from leafdraw.core.geom import (Affine, ArcP, Seg, angle_of, arc_from_3_points, norm_angle, point_side,
+                                polar, sweep)
 
 Point = tuple[float, float]
 SnapPoint = tuple[Point, str]  # (ponto, tipo: "end" | "mid" | "center" | "quad")
@@ -110,6 +115,18 @@ class Entity:
     def transformed(self, t: Affine) -> Entity:
         raise NotImplementedError
 
+    def grips(self) -> list[Point]:
+        """Pontos de edição direta (grips)."""
+        return []
+
+    def moved_grip(self, index: int, p: Point) -> Entity | None:
+        """Nova versão com o grip ``index`` levado até ``p`` (None se inválido)."""
+        return None
+
+    def _translate_grip(self, index: int, p: Point) -> Entity:
+        g = self.grips()[index]
+        return self.translated(p[0] - g[0], p[1] - g[1])
+
     def translated(self, dx: float, dy: float) -> Entity:
         return self.transformed(Affine.translation(dx, dy))
 
@@ -154,6 +171,16 @@ class Line(Entity):
     def bounds(self):
         return _bounds([self.p1, self.p2])
 
+    def grips(self):
+        return [self.p1, self.p2, _mid(self.p1, self.p2)]
+
+    def moved_grip(self, index, p):
+        if index == 0:
+            return replace(self, p1=p)
+        if index == 1:
+            return replace(self, p2=p)
+        return self._translate_grip(index, p)
+
     def transformed(self, t):
         return replace(self, p1=t.apply(self.p1), p2=t.apply(self.p2))
 
@@ -188,6 +215,14 @@ class Polyline(Entity):
     def bounds(self):
         return _bounds(self.vertices)
 
+    def grips(self):
+        return list(self.vertices)
+
+    def moved_grip(self, index, p):
+        verts = list(self.vertices)
+        verts[index] = p
+        return replace(self, vertices=verts)
+
     def transformed(self, t):
         return replace(self, vertices=[t.apply(v) for v in self.vertices])
 
@@ -218,6 +253,15 @@ class Circle(Entity):
         x, y = self.center
         r = self.radius
         return (x - r, y - r, x + r, y + r)
+
+    def grips(self):
+        return [self.center] + [polar(self.center, self.radius, a) for a in (0, 90, 180, 270)]
+
+    def moved_grip(self, index, p):
+        if index == 0:
+            return replace(self, center=p)
+        r = math.dist(self.center, p)
+        return replace(self, radius=r) if r > 1e-9 else None
 
     def transformed(self, t):
         return replace(self, center=t.apply(self.center), radius=self.radius * t.scale)
@@ -264,6 +308,21 @@ class Arc(Entity):
         pts = [p for p, kind in self.snap_points() if kind != "center"]
         return _bounds(pts)
 
+    def grips(self):
+        mid = polar(self.center, self.radius, self.start + self.sweep / 2)
+        return [self.start_point, mid, self.end_point, self.center]
+
+    def moved_grip(self, index, p):
+        if index == 3:
+            return replace(self, center=p)
+        pts = self.grips()[:3]
+        pts[index] = p
+        res = arc_from_3_points(*pts)
+        if res is None:
+            return None
+        c, r, a0, a1 = res
+        return replace(self, center=c, radius=r, start=a0, end=a1)
+
     def transformed(self, t):
         a0, a1 = t.map_angle(self.start), t.map_angle(self.end)
         if t.mirrored:
@@ -303,6 +362,12 @@ class Text(Entity):
 
     def bounds(self):
         return _bounds(self.corners())
+
+    def grips(self):
+        return [self.position]
+
+    def moved_grip(self, index, p):
+        return replace(self, position=p)
 
     def transformed(self, t):
         rot = t.map_angle(self.rotation)
@@ -387,6 +452,18 @@ class Dimension(Entity):
         pts = [p for seg in self.line_segments() for p in seg] + [self.p1, self.p2]
         return _bounds(pts)
 
+    def grips(self):
+        lay = self.layout()
+        return [self.p1, self.p2, _mid(lay["d1"], lay["d2"])]
+
+    def moved_grip(self, index, p):
+        if index == 0:
+            return replace(self, p1=p) if math.dist(p, self.p2) > 1e-9 else None
+        if index == 1:
+            return replace(self, p2=p) if math.dist(p, self.p1) > 1e-9 else None
+        L = math.dist(self.p1, self.p2) or 1.0
+        return replace(self, offset=point_side(self.p1, self.p2, p) / L)
+
     def transformed(self, t):
         s = t.scale
         return replace(self, p1=t.apply(self.p1), p2=t.apply(self.p2),
@@ -430,6 +507,18 @@ class Hatch(Entity):
     def bounds(self):
         return _bounds([v for loop in self.loops for v in loop])
 
+    def grips(self):
+        return [v for loop in self.loops for v in loop]
+
+    def moved_grip(self, index, p):
+        loops = [list(l) for l in self.loops]
+        for loop in loops:
+            if index < len(loop):
+                loop[index] = p
+                return replace(self, loops=loops)
+            index -= len(loop)
+        return None
+
     def transformed(self, t):
         return replace(self, loops=[[t.apply(v) for v in loop] for loop in self.loops],
                        scale=self.scale * t.scale, angle=norm_angle(t.map_angle(self.angle)))
@@ -457,13 +546,130 @@ class Plant(Entity):
         r = self.canopy / 2
         return (x - r, y - r, x + r, y + r)
 
+    def grips(self):
+        return [self.position]
+
+    def moved_grip(self, index, p):
+        return replace(self, position=p)
+
     def transformed(self, t):
         # o porte da planta é biológico: transformações só reposicionam
         return replace(self, position=t.apply(self.position))
 
 
+PLANTING_LAYOUTS = {"triangular": "Triangular (quincôncio)", "square": "Quadrado"}
+MAX_PLANTING_POINTS = 200_000
+
+
+@dataclass(kw_only=True)
+class PlantingArea(Entity):
+    """Maciço: área plantada com uma espécie em malha regular.
+
+    A quantidade de mudas é a contagem dos pontos da malha dentro da área,
+    recuada meio espaçamento das bordas.
+    """
+
+    kind: ClassVar[str] = "planting"
+
+    loops: list[list[Point]] = field(default_factory=list)
+    species: str = ""
+    spacing: float = 0.3  # m entre mudas
+    layout: str = "triangular"
+    angle: float = 0.0
+
+    @property
+    def area(self) -> float:
+        if not self.loops:
+            return 0.0
+        return max(0.0, polygon_area(self.loops[0]) - sum(polygon_area(l) for l in self.loops[1:]))
+
+    @property
+    def density(self) -> float:
+        """Mudas por m² (malha infinita)."""
+        s = self.spacing
+        return 1 / (s * s) if self.layout == "square" else 2 / (math.sqrt(3) * s * s)
+
+    def points(self) -> list[Point]:
+        return list(_planting_points(tuple(tuple(l) for l in self.loops), self.spacing, self.layout, self.angle))
+
+    @property
+    def count(self) -> int:
+        if self.area * self.density > MAX_PLANTING_POINTS:
+            return round(self.area * self.density)
+        return len(self.points())
+
+    def primitives(self):
+        return [s for loop in self.loops for s in _segs(loop, True)]
+
+    def snap_points(self):
+        return [(v, "end") for loop in self.loops for v in loop]
+
+    def bounds(self):
+        return _bounds([v for loop in self.loops for v in loop])
+
+    def grips(self):
+        return [v for loop in self.loops for v in loop]
+
+    def moved_grip(self, index, p):
+        loops = [list(l) for l in self.loops]
+        for loop in loops:
+            if index < len(loop):
+                loop[index] = p
+                return replace(self, loops=loops)
+            index -= len(loop)
+        return None
+
+    def transformed(self, t):
+        # espaçamento é agronômico: transformações não o alteram
+        return replace(self, loops=[[t.apply(v) for v in loop] for loop in self.loops],
+                       angle=norm_angle(t.map_angle(self.angle)))
+
+
+def _planting_points(loops, spacing: float, layout: str, angle: float) -> tuple[Point, ...]:
+    return _planting_points_cached(loops, round(spacing, 9), layout, round(angle, 9))
+
+
+@lru_cache(maxsize=256)
+def _planting_points_cached(loops, spacing, layout, angle) -> tuple[Point, ...]:
+    if not loops or spacing <= 0 or len(loops[0]) < 3:
+        return ()
+    poly = Polygon(loops[0], [l for l in loops[1:] if len(l) >= 3])
+    if not poly.is_valid:
+        poly = poly.buffer(0)
+    inner = poly.buffer(-spacing / 2)
+    if inner.is_empty:
+        c = poly.representative_point()
+        return ((c.x, c.y),) if poly.area > 0 else ()
+    if inner.area * (2 / (math.sqrt(3) * spacing * spacing)) > MAX_PLANTING_POINTS:
+        return ()
+    target = prep(inner.buffer(1e-9))
+    ox, oy = loops[0][0]
+    to_local = Affine.rotation(-angle, (ox, oy))
+    to_world = Affine.rotation(angle, (ox, oy))
+    pts = [to_local.apply(v) for v in inner.exterior.coords]
+    xmin, ymin = min(p[0] for p in pts), min(p[1] for p in pts)
+    xmax, ymax = max(p[0] for p in pts), max(p[1] for p in pts)
+    dy = spacing * math.sqrt(3) / 2 if layout == "triangular" else spacing
+    out = []
+    # malha centrada no contorno recuado (no referencial girado), com sobras iguais nas bordas
+    gx = xmin + ((xmax - xmin) % spacing) / 2
+    gy = ymin + ((ymax - ymin) % dy) / 2
+    j0 = math.floor((ymin - gy) / dy)
+    j1 = math.ceil((ymax - gy) / dy)
+    for j in range(j0, j1 + 1):
+        y = gy + j * dy
+        shift = spacing / 2 if (layout == "triangular" and j % 2) else 0.0
+        i0 = math.floor((xmin - gx - shift) / spacing)
+        i1 = math.ceil((xmax - gx - shift) / spacing)
+        for i in range(i0, i1 + 1):
+            wp = to_world.apply((gx + shift + i * spacing, y))
+            if target.contains(SPoint(wp)):
+                out.append(wp)
+    return tuple(out)
+
+
 ENTITY_TYPES: dict[str, type[Entity]] = {
-    c.kind: c for c in (Line, Polyline, Circle, Arc, Text, Dimension, Hatch, Plant)
+    c.kind: c for c in (Line, Polyline, Circle, Arc, Text, Dimension, Hatch, Plant, PlantingArea)
 }
 
 KIND_NAMES = {
@@ -475,4 +681,5 @@ KIND_NAMES = {
     "dimension": "Cota",
     "hatch": "Hachura",
     "plant": "Planta",
+    "planting": "Maciço",
 }

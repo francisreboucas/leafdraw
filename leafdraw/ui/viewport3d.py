@@ -13,7 +13,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 
-from leafdraw.core.entities import Plant
+from leafdraw.core.entities import Plant, PlantingArea
 from leafdraw.core.geom import tessellate
 from leafdraw.ui import glmath
 
@@ -73,6 +73,7 @@ GROUND_HALF = 2000.0
 LINE_Z = 0.03
 GRID_Z = 0.015
 CIRCLE_SEGMENTS = 64
+MAX_MASSED_3D = 30_000  # mudas de maciço desenhadas no 3D
 
 
 def _rgb(color: str):
@@ -220,6 +221,7 @@ class Viewport3D(QOpenGLWidget):
     def _rebuild(self):
         self._release_scene()
         lines, trunks, crowns = [], [], []
+        massed_budget = MAX_MASSED_3D
         for e in self.doc.entities.values():
             layer = self.doc.layer_for(e)
             if not layer.visible:
@@ -227,6 +229,14 @@ class Viewport3D(QOpenGLWidget):
             if isinstance(e, Plant):
                 self._plant_instances(e, trunks, crowns)
                 continue
+            if isinstance(e, PlantingArea) and massed_budget > 0:
+                pts = e.points()[:massed_budget]
+                massed_budget -= len(pts)
+                sp = self.catalog.get(e.species)
+                color = _rgb(e.color or (sp.cor if sp else "#6cc070"))
+                r = min(e.spacing * 0.5, sp.copa / 2 if sp else e.spacing * 0.5)
+                h = (sp.altura if sp else 0.3) / 2
+                crowns += [(x, y, h, r, r, h, *color) for x, y in pts]
             col = (*_rgb(e.color or layer.color), 1.0)
             for pr in e.primitives():
                 pts = tessellate(pr, 360 / CIRCLE_SEGMENTS)
