@@ -179,6 +179,7 @@ class Viewport3D(QOpenGLWidget):
         self.catalog = catalog
         self.cam = OrbitCamera()
         self.ctx: moderngl.Context | None = None
+        self.gl_info: dict = {}  # versão/placa, lidas com o contexto ativo
         self.exaggeration = 1.0
         self.selection: set[str] = set()
         self.override: dict = {}  # prévia do gizmo: id -> entidade transformada
@@ -289,6 +290,7 @@ class Viewport3D(QOpenGLWidget):
 
     def initializeGL(self):
         self.ctx = moderngl.create_context()
+        self.gl_info = {k: str(v) for k, v in self.ctx.info.items() if k in ("GL_VERSION", "GL_RENDERER", "GL_VENDOR")}
         self.mesh_prog = self.ctx.program(vertex_shader=MESH_VS, fragment_shader=MESH_FS)
         self.surf_prog = self.ctx.program(vertex_shader=SURF_VS, fragment_shader=SURF_FS)
         self.line_prog = self.ctx.program(vertex_shader=LINE_VS, fragment_shader=LINE_FS)

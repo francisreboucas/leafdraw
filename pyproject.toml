@@ -1,6 +1,6 @@
 [project]
 name = "leafdraw"
-version = "0.1.0"
+version = "0.1.0b1"
 description = "CAD para paisagismo"
 requires-python = ">=3.11"
 dependencies = [
@@ -21,7 +21,7 @@ leafdraw = "leafdraw.app:main"
 include = ["leafdraw*"]
 
 [tool.setuptools.package-data]
-leafdraw = ["resources/*.json"]
+leafdraw = ["resources/*.json", "resources/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,7 +2,17 @@
 
 CAD para paisagismo em Python, com Qt for Python (PySide6, LGPLv3) e moderngl.
 
-## Executar
+## Instalar (Windows)
+
+Baixe o instalador `LeafDraw-<versão>-setup.exe` na página de
+[releases](https://github.com/francisreboucas/leafdraw/releases) e execute. Não precisa de
+administrador (instala para o seu usuário; o instalador oferece instalar para todos). Há também
+uma versão portátil em `.zip`. Requer Windows 10/11 64 bits e placa de vídeo com OpenGL 3.3.
+
+Como o instalador ainda não é assinado digitalmente, o Windows SmartScreen pode avisar
+"o Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**.
+
+## Executar a partir do código
 
 ```powershell
 python -m venv .venv
@@ -10,6 +20,19 @@ python -m venv .venv
 .venv\Scripts\python -m leafdraw            # ou: leafdraw projeto.leaf
 .venv\Scripts\python -m pytest              # testes do núcleo
 ```
+
+## Gerar o instalador
+
+```powershell
+.venv\Scripts\python -m pip install pyinstaller
+winget install JRSoftware.InnoSetup          # uma vez
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+```
+
+O script gera `dist\LeafDraw\` (PyInstaller em modo pasta: as DLLs do Qt ficam separadas e
+substituíveis, como pede a LGPL), roda `LeafDraw.exe --smoke-test` para validar o pacote
+(catálogo, documento, 3D/OpenGL e folhas), cria o instalador com o Inno Setup e um zip portátil.
+O ícone vem de `packaging/leaf.png` (`packaging/make_icon.py`).
 
 ## Estrutura
 

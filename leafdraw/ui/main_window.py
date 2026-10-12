@@ -11,7 +11,6 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QLabel, QMainWindow, QMenu,
                                QMessageBox, QSplitter, QStyle, QTabWidget, QToolBar, QToolButton, QUndoView)
 
-from leafdraw import __version__
 from leafdraw.core.catalog import default_catalog
 from leafdraw.core.commands import AddEntities, RemoveEntities, ReplaceEntities
 from leafdraw.core.document import Document
@@ -19,6 +18,7 @@ from leafdraw.core.dxf_io import dwg_supported, export_dxf, import_drawing, read
 from leafdraw.core.fileio import EXTENSION, load_document, save_document, used_species
 from leafdraw.core.schedule import area_schedule, plant_schedule, to_csv
 from leafdraw.ui import tools as T
+from leafdraw.ui.about_dialog import AboutDialog
 from leafdraw.ui.catalog_dialog import CatalogDialog
 from leafdraw.ui.commandline import CommandLine
 from leafdraw.ui.composer import SheetComposer
@@ -718,9 +718,7 @@ class MainWindow(QMainWindow):
         return QSettings().value("last_dir", os.path.expanduser("~"))
 
     def about(self):
-        QMessageBox.about(self, "Sobre o LeafDraw",
-                          f"<b>LeafDraw {__version__}</b><br>CAD para paisagismo.<br><br>"
-                          "Construído com Qt for Python (PySide6, LGPLv3), moderngl, ezdxf e Shapely.")
+        AboutDialog(self, self.view3d.gl_info).exec()
 
     # --- janela -----------------------------------------------------------
 

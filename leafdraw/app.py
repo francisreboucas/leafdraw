@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import sys
+import traceback
+from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, Qt
-from PySide6.QtGui import QSurfaceFormat
+from PySide6.QtCore import QCoreApplication, Qt, QTimer
+from PySide6.QtGui import QIcon, QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 
+from leafdraw import __version__
 from leafdraw.ui.theme import dark_palette
+
+ICON = Path(__file__).resolve().parent / "resources" / "icon.png"
 
 
 def configure_opengl():
@@ -25,19 +30,64 @@ def create_app(argv=None) -> QApplication:
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("LeafDraw")
     app.setOrganizationName("LeafDraw")
+    app.setApplicationVersion(__version__)
     app.setStyle("Fusion")
     app.setPalette(dark_palette())
+    if ICON.exists():
+        app.setWindowIcon(QIcon(str(ICON)))
     return app
 
 
+def _smoke_test(app, win, out_path: str):
+    """Verifica a instalação: catálogo, documento, 2D, 3D (OpenGL) e folhas; grava o resultado e sai."""
+    from leafdraw.core.commands import AddEntities
+    from leafdraw.core.entities import Contour, Plant, Polyline
+    from leafdraw.core.sheets import default_sheet
+
+    code = 1
+    try:
+        sp = win.catalog.get("handroanthus-albus")
+        doc = win.doc
+        doc.undo_stack.push(AddEntities(doc, [
+            Polyline(vertices=[(0, 0), (20, 0), (20, 10), (0, 10)], closed=True),
+            Contour(vertices=[(0, 0), (20, 10)], elevation=1.0),
+            Plant(position=(5, 5), species=sp.id, canopy=sp.copa, height=sp.altura),
+        ]))
+        win.zoom_extents()
+        app.processEvents()
+        img = win.view3d.render_image(None, 320, 200)
+        if img is None:
+            raise RuntimeError("OpenGL não inicializou (render_image retornou None)")
+        sheet = default_sheet(doc.bounds())
+        info = win.view3d.gl_info
+        Path(out_path).write_text(
+            f"OK LeafDraw {__version__}\n"
+            f"especies={len(win.catalog.all())} entidades={len(doc.entities)} "
+            f"folha={sheet.paper} imagem3d={img.width()}x{img.height()}\n"
+            f"GL={info.get('GL_VERSION', '?')} {info.get('GL_RENDERER', '?')}\n", encoding="utf-8")
+        code = 0
+    except Exception:
+        Path(out_path).write_text("FALHA\n" + traceback.format_exc(), encoding="utf-8")
+    win.maybe_save = lambda: True
+    QTimer.singleShot(0, lambda: app.exit(code))
+
+
 def main():
+    args = sys.argv[1:]
+    smoke_out = None
+    if "--smoke-test" in args:
+        i = args.index("--smoke-test")
+        smoke_out = args[i + 1] if i + 1 < len(args) else "leafdraw-smoke.txt"
+        del args[i:i + 2]
     app = create_app()
     from leafdraw.ui.main_window import MainWindow
 
     win = MainWindow()
     win.show()
-    if len(sys.argv) > 1:
-        win.open_path(sys.argv[1])
+    if smoke_out:
+        QTimer.singleShot(1500, lambda: _smoke_test(app, win, smoke_out))
+    elif args:
+        win.open_path(args[0])
     else:
         win.zoom_extents()
     sys.exit(app.exec())

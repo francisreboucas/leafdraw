@@ -1,0 +1,25 @@
+LeafDraw — avisos de terceiros
+==============================
+
+O LeafDraw é software livre sob a GNU General Public License v3 (arquivo LICENSE).
+Esta distribuição inclui os componentes abaixo, cada um sob a sua própria licença.
+Os textos completos estão na pasta "licenses".
+
+Qt for Python (PySide6, Shiboken6) e Qt 6
+  Licença: GNU Lesser General Public License v3 (licenses/LGPL-3.0.txt,
+  complementada pela GPL v3 no arquivo LICENSE)
+  Site: https://www.qt.io/qt-for-python
+  Código-fonte: https://code.qt.io/  e  https://download.qt.io/official_releases/QtForPython/
+  As bibliotecas do Qt são distribuídas como arquivos separados (DLLs na pasta
+  "_internal"), sem modificações, e podem ser substituídas por outras versões
+  compatíveis. Para obter o código-fonte correspondente a esta versão, use os
+  endereços acima ou abra uma issue em https://github.com/francisreboucas/leafdraw.
+
+moderngl e glcontext — MIT (licenses/moderngl, licenses/glcontext)
+NumPy — BSD 3-Clause e componentes listados (licenses/numpy)
+Shapely — BSD 3-Clause (licenses/shapely); inclui GEOS — LGPL v2.1 (licenses/shapely/LICENSE_GEOS)
+ezdxf — MIT (licenses/ezdxf)
+fontTools — MIT (licenses/fonttools)
+pyparsing — MIT (licenses/pyparsing)
+typing_extensions — PSF (licenses/typing_extensions)
+Python — PSF License (licenses/python)
