@@ -1,0 +1,61 @@
+name: Relatar bug
+description: Algo não funciona como deveria
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Obrigado por relatar! Antes de enviar, verifique se já não existe uma issue sobre o mesmo problema.
+        Vulnerabilidades de segurança devem ser relatadas de forma privada (veja SECURITY.md).
+  - type: textarea
+    id: descricao
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o problema e o que você esperava que acontecesse.
+    validations:
+      required: true
+  - type: textarea
+    id: passos
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Abra um projeto novo
+        2. Selecione a ferramenta ...
+        3. Clique em ...
+        4. Veja o erro
+    validations:
+      required: true
+  - type: input
+    id: versao
+    attributes:
+      label: Versão do LeafDraw
+      description: Menu Ajuda → Sobre, ou o nome do instalador.
+      placeholder: 0.1.0b1
+    validations:
+      required: true
+  - type: dropdown
+    id: instalacao
+    attributes:
+      label: Forma de instalação
+      options:
+        - Instalador (.exe)
+        - Versão portátil (.zip)
+        - A partir do código-fonte
+    validations:
+      required: true
+  - type: input
+    id: sistema
+    attributes:
+      label: Sistema operacional
+      placeholder: Windows 11 23H2
+  - type: input
+    id: gpu
+    attributes:
+      label: Placa de vídeo
+      description: Importante para problemas na vista 3D.
+      placeholder: NVIDIA GeForce GTX 1650
+  - type: textarea
+    id: anexos
+    attributes:
+      label: Logs, capturas de tela ou arquivos
+      description: Mensagens de erro, capturas de tela ou um arquivo .leaf mínimo que reproduza o problema.

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Relatar vulnerabilidade de segurança
+    url: https://github.com/francisreboucas/leafdraw/security/advisories/new
+    about: Relate vulnerabilidades de forma privada, não em issues públicas.

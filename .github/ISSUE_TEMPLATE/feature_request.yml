@@ -1,0 +1,28 @@
+name: Sugerir funcionalidade
+description: Ideia de nova ferramenta ou melhoria
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema a sugestão resolve?
+      description: Descreva a situação no seu trabalho de projeto que motivou a ideia.
+    validations:
+      required: true
+  - type: textarea
+    id: solucao
+    attributes:
+      label: Solução proposta
+      description: Como você imagina que deveria funcionar?
+    validations:
+      required: true
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Outras formas de resolver, ou como outros programas (CAD, BIM, paisagismo) tratam isso.
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto adicional
+      description: Imagens, esboços ou exemplos.
