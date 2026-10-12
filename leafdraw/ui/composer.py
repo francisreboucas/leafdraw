@@ -18,6 +18,7 @@ from leafdraw.core.sheets import (PAPER_SIZES, STANDARD_SCALES, NorthElement, Pl
                                   Sheet, SheetElement, TextElement, TitleBlockElement, ViewportElement,
                                   default_sheet, fit_scale, new_id, nice_bar_length)
 from leafdraw.ui.render import RenderContext, draw_element, draw_sheet, plant_table_height
+from leafdraw.ui.viewport2d import zoom_about
 
 ORIENTATIONS = {"landscape": "Paisagem", "portrait": "Retrato"}
 HANDLE_PX = 9
@@ -190,7 +191,7 @@ class PaperView(QGraphicsView):
         super().__init__(parent)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setBackgroundBrush(QColor(72, 76, 82))
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)  # o zoom ancora em zoom_about
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self._pan = None
@@ -206,7 +207,7 @@ class PaperView(QGraphicsView):
         f = 1.2 ** (e.angleDelta().y() / 120)
         s = self.transform().m11() * f
         if 0.05 <= s <= 80:
-            self.scale(f, f)
+            zoom_about(self, e.position(), f)
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.MiddleButton:

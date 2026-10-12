@@ -24,12 +24,27 @@ SCENE_HALF = 50_000.0  # m
 GRID_STEPS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
 GRID_MIN_PX = 14
 SNAP_PX = 10
-ZOOM_RANGE = (0.02, 20_000.0)  # px por metro
+ZOOM_RANGE = (0.05, 20_000.0)  # px por metro; abaixo disso a cena (100 km) quase cabe na tela e o zoom não ancora
 SNAP_MODES = ("end", "mid", "center", "quad", "int", "perp", "near")
 DEFAULT_SNAP_MODES = {"end", "mid", "center", "quad", "int", "perp"}
 MAX_SNAP_PRIMITIVES = 60
 MAX_GRIP_ENTITIES = 100
 GRIP_PX = 4  # meia largura do quadrado do grip
+
+
+def zoom_about(view: QGraphicsView, pos: QPointF, factor: float):
+    """Escala a vista mantendo parado o ponto da cena sob ``pos`` (pixels do viewport).
+
+    Não usa a âncora AnchorUnderMouse do Qt: ela depende da última posição registrada
+    pelo mouseMoveEvent do QGraphicsView, que as ferramentas nem sempre repassam, e o
+    zoom acabava puxado para outro ponto.
+    """
+    before = view.viewportTransform().inverted()[0].map(pos)
+    view.scale(factor, factor)
+    drift = view.viewportTransform().map(before) - pos
+    h, v = view.horizontalScrollBar(), view.verticalScrollBar()
+    h.setValue(h.value() + round(drift.x()))
+    v.setValue(v.value() + round(drift.y()))
 
 
 class Viewport2D(QGraphicsView):
@@ -58,7 +73,7 @@ class Viewport2D(QGraphicsView):
         self.setScene(scene)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
-        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)  # o zoom ancora em zoom_about
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -405,7 +420,7 @@ class Viewport2D(QGraphicsView):
         f = 1.2 ** (e.angleDelta().y() / 120)
         s = abs(self.transform().m11()) * f
         if ZOOM_RANGE[0] <= s <= ZOOM_RANGE[1]:
-            self.scale(f, f)
+            zoom_about(self, e.position(), f)
         e.accept()
 
     def mousePressEvent(self, e):
