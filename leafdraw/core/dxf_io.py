@@ -7,6 +7,8 @@ unidade e o deslocamento escolhidos pelo usuário.
 from __future__ import annotations
 
 import math
+import os
+import platform
 import re
 from collections import Counter
 from dataclasses import dataclass, field, fields, replace
@@ -36,8 +38,28 @@ DXF_TO_PATTERN = {v: k for k, v in PATTERN_TO_DXF.items()} | {"NET": "cross", "A
 PATTERN_SPACING = 3.175
 
 
+def _find_oda_converter() -> str | None:
+    """O instalador do ODA cria pastas com versão ("ODAFileConverter 27.9.0"), que o
+    caminho padrão do ezdxf não encontra; procura a versão mais nova em Program Files."""
+    found = []
+    for env in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+        base = os.environ.get(env)
+        if base:
+            found += Path(base, "ODA").glob("ODAFileConverter*/ODAFileConverter.exe")
+
+    def version_key(p: Path):
+        return [int(n) for n in re.findall(r"\d+", p.parent.name)]
+
+    return str(max(found, key=version_key)) if found else None
+
+
 def dwg_supported() -> bool:
-    return odafc.is_installed()
+    if odafc.is_installed():
+        return True
+    if platform.system() == "Windows" and (exe := _find_oda_converter()):
+        ezdxf.options.set("odafc-addon", "win_exec_path", f'"{exe}"')
+        return odafc.is_installed()
+    return False
 
 
 def read_drawing(path: str):
