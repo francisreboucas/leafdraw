@@ -5,3 +5,7 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+
+# arquivos gerados a partir dos exemplos
+examples/*.dxf
+examples/*.pdf

@@ -1,6 +1,17 @@
 # LeafDraw
 
+[![Licença: GPL v3](https://img.shields.io/badge/licen%C3%A7a-GPLv3-blue.svg)](LICENSE)
+[![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)](https://github.com/francisreboucas/leafdraw/releases)
+[![Plataforma: Windows](https://img.shields.io/badge/plataforma-Windows%2010%20%7C%2011-0078D6.svg?logo=windows)](https://github.com/francisreboucas/leafdraw/releases)
+[![Feito no Brasil](https://img.shields.io/badge/feito%20no-Brasil-009c3b.svg?labelColor=ffdf00)](https://github.com/francisreboucas/leafdraw)
+
 CAD para paisagismo em Python, com Qt for Python (PySide6, LGPLv3) e moderngl.
+
+![Planta e vista 3D do projeto de exemplo](docs/images/screenshot_2.png)
+
+| Folhas de impressão | Novo projeto |
+|---|---|
+| ![Aba Folhas com a planta de paisagismo em A2](docs/images/screenshot_3.png) | ![Janela vazia com planta e vista 3D lado a lado](docs/images/screenshot_1.png) |
 
 ## Instalar (Windows)
 
@@ -33,6 +44,24 @@ O script gera `dist\LeafDraw\` (PyInstaller em modo pasta: as DLLs do Qt ficam s
 substituíveis, como pede a LGPL), roda `LeafDraw.exe --smoke-test` para validar o pacote
 (catálogo, documento, 3D/OpenGL e folhas), cria o instalador com o Inno Setup e um zip portátil.
 O ícone vem de `packaging/leaf.png` (`packaging/make_icon.py`).
+
+## Exemplo
+
+`examples/jardim_residencial.leaf` é um jardim residencial (lote de 20 x 30 m) que usa
+todos os recursos de documento: linhas, polilinhas, círculos, arcos, offset, textos, cotas,
+hachuras de todos os padrões (inclusive com furo), plantas isoladas e em linha, maciços,
+rótulos, curvas e cotas de nível, vistas de frente e camadas próprias. Tem três folhas A2:
+
+1. **Planta de paisagismo** (1:100) com quadro de vegetação, norte, escala e carimbo;
+2. **Implantação, topografia e vistas**: planta 1:200 sem vegetação e as vistas A e B a 1:100;
+3. **Perspectiva e detalhe**: janela 3D e detalhe da entrada a 1:75.
+
+Abra pelo menu Arquivo ou pela linha de comando. O PDF das folhas sai pela aba Folhas
+(ou pelo comando `PDF`) e o DXF por Exportar DXF:
+
+```powershell
+.venv\Scripts\python -m leafdraw examples\jardim_residencial.leaf
+```
 
 ## Estrutura
 
