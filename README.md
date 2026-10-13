@@ -210,10 +210,15 @@ planta, ou dê duplo clique nela e clique no desenho.
   agrupamento de vértices; folhas e flores, peça por peça, e se preciso a copa é raleada
   com as folhas restantes aumentadas para manter a cobertura (`leafdraw/core/meshlod.py`).
 - **Biblioteca distribuída**: `leafdraw/resources/models/` vai no instalador e só recebe modelos
-  que podem ser redistribuídos (hoje, os do Poly Haven, CC0, em `polyhaven/`, com origem e
-  autores em `POLYHAVEN.md`). O catálogo embutido aponta para eles com caminhos relativos.
+  que podem ser redistribuídos: os gerados pelo LeafDraw (CC0, em `leafdraw/`) e os do Poly
+  Haven (CC0, em `polyhaven/`, com origem e autores em `POLYHAVEN.md`). O catálogo embutido aponta para eles com caminhos relativos.
   Modelos de uso pessoal ficam fora do repositório (a pasta `modelos/` na raiz é ignorada
   pelo git) e são associados às espécies pelo catálogo do usuário.
+- **Modelos gerados**: `python -m leafdraw.modelgen [ids]` gera um `.glb` por espécie do catálogo
+  (`leafdraw/modelgen.py`): folhas, flores e frondes em planos com textura recortada por
+  alfa, troncos em cilindros, com um gerador por forma de crescimento (árvore, palmeira
+  pinada ou de leque, arbusto, roseta, touceira e formas especiais) e parâmetros por espécie.
+  O modelo sai no porte do catálogo, sem esticar.
 - **Poly Haven** (CC0): `python -m leafdraw.polyhaven fern_02 shrub_02` baixa o glTF 1k só com geometria e texturas de cor, junta a máscara de transparência das
   folhas (distribuída à parte, em JPEG), separa conjuntos de variações em modelos próprios
   e grava `.glb` compactados, com origem e autores em `POLYHAVEN.md`.

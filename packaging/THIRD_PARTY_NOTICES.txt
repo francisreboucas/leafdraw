@@ -24,6 +24,9 @@ pyparsing — MIT (licenses/pyparsing)
 typing_extensions — PSF (licenses/typing_extensions)
 Python — PSF License (licenses/python)
 
+Modelos 3D gerados pelo LeafDraw (leafdraw/resources/models/leafdraw)
+  Gerados por código (leafdraw/modelgen.py). Licença: CC0 1.0 Universal (domínio público).
+
 Modelos 3D de vegetação e pedras (leafdraw/resources/models/polyhaven)
   Origem: Poly Haven, https://polyhaven.com
   Licença: CC0 1.0 Universal (domínio público), https://creativecommons.org/publicdomain/zero/1.0/
