@@ -45,3 +45,17 @@ def test_every_builtin_species_has_a_generator_or_model():
     cat = default_catalog()
     for sid, sp in cat._builtin.items():
         assert sid in SPECIES or sp.modelo_3d.startswith("polyhaven/"), sid
+
+
+@pytest.mark.parametrize("sid", ["handroanthus-albus", "plinia-cauliflora", "eugenia-uniflora", "pleroma-mutabile"])
+def test_tree_trunks_start_at_the_insertion_point(app, tmp_path, sid):
+    """O ponto de inserção é o centro da caixa do modelo: o tronco tem de nascer ali."""
+    sp = default_catalog().get(sid)
+    model = load_model(generate(sid, sp.altura, sp.copa, tmp_path), normalize=False)
+    allp = np.concatenate([p.positions for p in model.primitives])
+    center = (allp.min(0)[:2] + allp.max(0)[:2]) / 2
+    trunk = next(p for p in model.primitives if p.material.name == "tronco")
+    base = trunk.positions[trunk.positions[:, 2] < 0.03 * allp[:, 2].max()]
+    assert np.linalg.norm(base[:, :2].mean(0) - center) < 0.03 * sp.copa
+    # vários troncos não ficam mais grossos que um tronco único
+    assert np.ptp(base[:, 0]) < 0.12 * sp.copa

@@ -469,6 +469,14 @@ class Builder:
                 tris += [(a0, a0 + 1, a0 + row + 1), (a0, a0 + row + 1, a0 + row)]
         self._add(key, pos, nrm, uv, tris)
 
+    def center_xy(self, key: str) -> np.ndarray:
+        """Leva o centro da caixa (em planta) das malhas ``key`` para o eixo; devolve o deslocamento."""
+        pos = np.array(self.data[key][0])
+        lo, hi = pos.min(0), pos.max(0)
+        shift = np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, 0.0])
+        self.data[key][0] = [tuple(p - shift) for p in pos]
+        return shift
+
     def fit(self, width: float, height: float):
         """Ajusta tudo à caixa do catálogo: largura (maior lado em planta) e altura."""
         allp = np.array([p for d in self.data.values() for p in d[0]])
@@ -512,6 +520,9 @@ def _crown(b: Builder, center, radii, cards: int, half: float, key: str = "folha
         r = rnd.uniform(0.35, 0.55) if k else 0.0
         centers.append(center + radii * np.array([math.cos(a) * r, math.sin(a) * r,
                                                   rnd.uniform(-0.25, 0.3) + top_bias * 0.3]))
+    # copa centrada no eixo do tronco (o sorteio pode deixá-la pender para um lado)
+    shift = np.mean(centers, axis=0) - center
+    centers = [c - np.array([shift[0], shift[1], 0.0]) for c in centers]
     blob_r = radii * 0.62
     for i in range(cards):
         c = centers[i % blobs]
@@ -540,21 +551,28 @@ def tree(b: Builder, H, C, leaf_tex, *, trunk_h=0.35, trunk_r=None, bark="#6b4f3
     th = H * trunk_h
     crown_c = np.array([0, 0, th + (H - th) * 0.5])
     radii = np.array([C / 2 * 0.8, C / 2 * 0.8, (H - th) / 2 * 0.8 * flat])
-    tops = []
-    for s in range(stems):
-        a = 2 * math.pi * s / stems + rnd.uniform(-0.3, 0.3)
-        off = np.array([math.cos(a), math.sin(a), 0]) * (tr * 1.5 if stems > 1 else 0)
-        top = np.array([0, 0, th]) + off * (4 if stems > 1 else 1) + np.array([rnd.uniform(-1, 1) * tr,
-                                                                                   rnd.uniform(-1, 1) * tr, 0])
-        mid = (off + top) / 2 + np.array([rnd.uniform(-1, 1) * tr, rnd.uniform(-1, 1) * tr, 0])
-        b.tube("tronco", [off, mid, top], [tr * (1.25 if stems == 1 else 0.8), tr * 0.9, tr * 0.7], 9)
-        tops.append(top)
     half = max(radii) * card
     centers = _crown(b, crown_c, radii, _cards_for(radii, half, density), half, blobs=blobs, top_bias=top_bias)
+    shift = b.center_xy("folhas")  # o ponto de inserção é o centro da caixa: a copa fica centrada no tronco
+    centers = [c - shift for c in centers]
+    tops = []
+    # vários troncos: a seção somada é a de um tronco único, e eles sobem juntos, abrindo pouco
+    ts = tr if stems == 1 else tr / math.sqrt(stems) * 1.15
+    for s in range(stems):
+        a = 2 * math.pi * s / stems + rnd.uniform(-0.3, 0.3)
+        d = np.array([math.cos(a), math.sin(a), 0])
+        if stems == 1:
+            base, top = np.zeros(3), np.array([rnd.uniform(-1, 1) * tr, rnd.uniform(-1, 1) * tr, th])
+        else:
+            base = d * ts * 1.1
+            top = d * min(C * 0.1, ts * 4) + UP * th * rnd.uniform(0.9, 1.05)
+        mid = (base + top) / 2 + np.array([rnd.uniform(-0.5, 0.5) * ts, rnd.uniform(-0.5, 0.5) * ts, 0])
+        b.tube("tronco", [base, mid, top], [ts * (1.25 if stems == 1 else 1.1), ts * 0.95, ts * 0.75], 9)
+        tops.append(top)
     for c in centers:  # galhos até cada bolo da copa
         t = tops[rnd.randrange(len(tops))]
         mid = (t + c) / 2 + np.array([0, 0, -0.1 * (c[2] - t[2])])
-        b.tube("tronco", [t, mid, c], [tr * 0.6, tr * 0.4, tr * 0.2], 6)
+        b.tube("tronco", [t, mid, c], [ts * 0.6, ts * 0.4, ts * 0.2], 6)
     b.fit(C, H)
 
 
