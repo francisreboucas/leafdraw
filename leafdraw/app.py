@@ -60,10 +60,18 @@ def _smoke_test(app, win, out_path: str):
             raise RuntimeError("OpenGL não inicializou (render_image retornou None)")
         sheet = default_sheet(doc.bounds())
         info = win.view3d.gl_info
+        # biblioteca de modelos 3D empacotada: todo modelo do catálogo embutido abre
+        from leafdraw.core.catalog import MODELS_DIR, PlantCatalog
+        from leafdraw.core.gltf import load_model
+        builtin = [s for s in PlantCatalog.load().all() if s.modelo_3d]
+        for s in builtin:
+            load_model(MODELS_DIR / s.modelo_3d)
+        n_models = len(list(MODELS_DIR.rglob("*.glb")))
         Path(out_path).write_text(
             f"OK LeafDraw {__version__}\n"
             f"especies={len(win.catalog.all())} entidades={len(doc.entities)} "
-            f"folha={sheet.paper} imagem3d={img.width()}x{img.height()}\n"
+            f"folha={sheet.paper} imagem3d={img.width()}x{img.height()} "
+            f"modelos3d={n_models} (catálogo: {len(builtin)} abertos)\n"
             f"GL={info.get('GL_VERSION', '?')} {info.get('GL_RENDERER', '?')}\n", encoding="utf-8")
         code = 0
     except Exception:
