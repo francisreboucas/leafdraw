@@ -14,6 +14,7 @@ TRUNK = (0.40, 0.29, 0.20)
 HIGHLIGHT = (0.30, 0.64, 1.0)
 LIGHT_DIR = (0.45, -0.35, 0.82)  # mesma direção do shader
 MESHES = ("cylinder", "sphere", "bush", "palm")
+MODEL_PREFIX = "glb:"  # chave das instâncias de um modelo importado: "glb:<caminho>"
 
 
 def rng_for(eid: str) -> random.Random:
@@ -32,12 +33,17 @@ def tint(color, selected: bool):
 
 
 def plant_instances(simbolo: str, x: float, y: float, z0: float, canopy: float, height: float, color,
-                    eid: str, selected: bool = False) -> dict[str, list[tuple]]:
+                    eid: str, selected: bool = False, model: str | None = None) -> dict[str, list[tuple]]:
+    """Instâncias por malha. Com ``model`` (caminho de um modelo normalizado, ver
+    ``core.gltf``), a planta é uma única instância dele; a cor da instância
+    multiplica a textura, então só varia levemente em torno do branco."""
     rnd = rng_for(eid)
     s = 1 + rnd.uniform(-0.08, 0.08)
     r = max(canopy / 2 * s, 0.05)
     h = max(height * s, 0.05)
     rot = rnd.uniform(0, 2 * math.pi)
+    if model:
+        return {MODEL_PREFIX + model: [(x, y, z0, r, r, h, *tint(jitter((0.94, 0.94, 0.94), rnd, 0.06), selected), rot)]}
     trunk = tint(TRUNK, selected)
     out: dict[str, list[tuple]] = {m: [] for m in MESHES}
     if simbolo == "arvore":

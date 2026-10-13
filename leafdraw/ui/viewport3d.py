@@ -20,7 +20,7 @@ from leafdraw.core.geom import Affine
 from leafdraw.core.terrain import Terrain
 from leafdraw.ui import glmath
 from leafdraw.ui.gizmo3d import gizmo_triangles, hit_test, point_in_polygon
-from leafdraw.ui.plants3d import MESHES
+from leafdraw.ui.plants3d import MODEL_PREFIX
 from leafdraw.ui.scene3d import SceneArrays, ZMap, build_scene
 
 LIGHT = """
@@ -60,6 +60,65 @@ in vec3 v_color;
 out vec4 f_color;
 """ + LIGHT + """
 void main() { f_color = vec4(shade(normalize(v_norm), v_color), 1.0); }
+"""
+
+# Modelos importados (.glb): textura de cor com recorte por alfa (folhas em
+# planos), iluminação nas duas faces e um pouco de luz atravessando a folha.
+TEX_VS = """
+#version 330
+uniform mat4 mvp;
+in vec3 in_pos;
+in vec3 in_norm;
+in vec2 in_uv;
+in vec3 i_off;
+in vec3 i_scale;
+in vec3 i_color;
+in float i_rot;
+out vec3 v_norm;
+out vec2 v_uv;
+out vec3 v_color;
+void main() {
+    float c = cos(i_rot), s = sin(i_rot);
+    vec3 p = vec3(c * in_pos.x - s * in_pos.y, s * in_pos.x + c * in_pos.y, in_pos.z);
+    vec3 n = vec3(c * in_norm.x - s * in_norm.y, s * in_norm.x + c * in_norm.y, in_norm.z);
+    gl_Position = mvp * vec4(p * i_scale + i_off, 1.0);
+    v_norm = n / i_scale;
+    v_uv = in_uv;
+    v_color = i_color;
+}
+"""
+
+TEX_FS = """
+#version 330
+uniform sampler2D tex;
+uniform bool has_tex;
+uniform vec4 base_color;
+uniform float alpha_cutoff;  // < 0: sem recorte
+uniform bool two_sided;
+uniform bool blend;
+in vec3 v_norm;
+in vec2 v_uv;
+in vec3 v_color;
+out vec4 f_color;
+""" + LIGHT + """
+void main() {
+    vec4 c = base_color;
+    if (has_tex) c *= texture(tex, v_uv);
+    if (alpha_cutoff >= 0.0 && c.a < alpha_cutoff) discard;
+    if (blend && c.a < 0.02) discard;
+    vec3 n = normalize(v_norm);
+    vec3 rgb = c.rgb * v_color;
+    vec3 col;
+    if (two_sided) {
+        if (!gl_FrontFacing) n = -n;
+        vec3 light = normalize(vec3(0.45, -0.35, 0.82));
+        float back = max(-dot(n, light), 0.0);  // luz que atravessa a folha
+        col = shade(n, rgb) + rgb * 0.28 * back;
+    } else {
+        col = shade(n, rgb);
+    }
+    f_color = vec4(col, blend ? c.a : 1.0);
+}
 """
 
 SURF_VS = """
@@ -116,6 +175,63 @@ CLICK_PX = 4
 PICK_PX = 7
 
 
+class _ModelDraw:
+    """Uma primitiva de modelo importado com suas instâncias; faz as vezes de VAO
+    em ``render``/``_release`` e ajusta material e culling antes de desenhar."""
+
+    def __init__(self, ctx, prog, vao, texture, material, alpha_mode: str):
+        self.ctx, self.prog, self.vao, self.texture, self.mat = ctx, prog, vao, texture, material
+        self.alpha_mode = alpha_mode
+
+    def render(self, mode, instances=1):
+        m = self.mat
+        self.prog["base_color"].value = tuple(m.base_color)
+        self.prog["alpha_cutoff"].value = m.alpha_cutoff if self.alpha_mode == "MASK" else -1.0
+        self.prog["blend"].value = self.alpha_mode == "BLEND"
+        self.prog["two_sided"].value = m.double_sided
+        self.prog["has_tex"].value = self.texture is not None
+        if self.texture is not None:
+            self.texture.use(0)
+            self.prog["tex"].value = 0
+        if not m.double_sided:
+            self.ctx.enable(moderngl.CULL_FACE)
+        self.vao.render(mode, instances=instances)
+        self.ctx.disable(moderngl.CULL_FACE)
+
+    def release(self):
+        self.vao.release()  # buffers de vértices e a textura ficam no cache do modelo
+
+
+def _decode_texture(ctx, data: bytes | None):
+    """(textura, tem recorte): o 2º diz se a imagem tem partes transparentes."""
+    if not data:
+        return None, False
+    img = QImage.fromData(data)
+    if img.isNull():
+        return None, False
+    img = img.convertToFormat(QImage.Format.Format_RGBA8888)
+    pixels = bytes(img.constBits())
+    alpha = np.frombuffer(pixels, "u1")[3::4]
+    cutout = img.hasAlphaChannel() and np.count_nonzero(alpha < 128) > alpha.size * 0.005
+    # glTF tem a origem das UVs no canto superior esquerdo, como a 1ª linha do QImage
+    tex = ctx.texture((img.width(), img.height()), 4, pixels)
+    tex.build_mipmaps()
+    tex.filter = (moderngl.LINEAR_MIPMAP_LINEAR, moderngl.LINEAR)
+    tex.anisotropy = 8.0
+    return tex, cutout
+
+
+def effective_alpha_mode(material, cutout: bool) -> str:
+    """Folhas em PNG transparente viram recorte, mesmo marcadas OPAQUE ou BLEND.
+
+    Exportadores como o SketchUp gravam OPAQUE com textura de folha transparente, e
+    BLEND em vegetação dá erros de ordem de desenho; recorte é o padrão para folhas.
+    """
+    if cutout and material.alpha_mode in ("OPAQUE", "BLEND"):
+        return "MASK"
+    return material.alpha_mode
+
+
 class OrbitCamera:
     FOV = 45.0
 
@@ -165,6 +281,7 @@ class OrbitCamera:
 class Viewport3D(QOpenGLWidget):
     picked = Signal(str, bool)  # id da entidade ("" = nada), aditivo (Ctrl/Shift)
     transformRequested = Signal(object, str)  # Affine, texto do comando
+    modelError = Signal(str)  # modelo 3D de espécie que não abriu (mensagem para a barra de status)
 
     PRESETS = {
         "top": (-90.0, 89.9, True),
@@ -295,6 +412,10 @@ class Viewport3D(QOpenGLWidget):
         self.mesh_prog = self.ctx.program(vertex_shader=MESH_VS, fragment_shader=MESH_FS)
         self.surf_prog = self.ctx.program(vertex_shader=SURF_VS, fragment_shader=SURF_FS)
         self.line_prog = self.ctx.program(vertex_shader=LINE_VS, fragment_shader=LINE_FS)
+        self.tex_prog = self.ctx.program(vertex_shader=TEX_VS, fragment_shader=TEX_FS)
+        # caminho -> (Model, [(vbo, ibo, textura, material, modo de alfa efetivo)])
+        self.model_gpu: dict[str, tuple[object, list]] = {}
+        self._reported_errors: set[str] = set()
         self.meshes = {}
         sources = {"sphere": glmath.uv_sphere(), "cylinder": glmath.cylinder(), "bush": glmath.bush(),
                    "palm": glmath.palm_crown()}
@@ -327,12 +448,61 @@ class Viewport3D(QOpenGLWidget):
             index_buffer=ibo)
         return (vao, moderngl.TRIANGLES, len(rows), [inst])
 
+    def _model_parts(self, path: str, model) -> list:
+        """Buffers e texturas de um modelo, enviados à GPU uma vez (de novo se o arquivo mudou)."""
+        hit = self.model_gpu.get(path)
+        if hit is not None and hit[0] is model:
+            return hit[1]
+        if hit is not None:
+            for vbo, ibo, tex, _m, _a in hit[1]:
+                for obj in (vbo, ibo, tex):
+                    if obj is not None:
+                        obj.release()
+        parts = []
+        for p in model.primitives:
+            tex, cutout = _decode_texture(self.ctx, p.material.image)
+            parts.append((self.ctx.buffer(p.interleaved().tobytes()), self.ctx.buffer(p.indices.tobytes()),
+                          tex, p.material, effective_alpha_mode(p.material, cutout)))
+        self.model_gpu[path] = (model, parts)
+        return parts
+
+    def _vao_model(self, path: str, model, rows) -> list:
+        if not len(rows) or model is None:
+            return []
+        inst = self.ctx.buffer(np.asarray(rows, "f4").tobytes())
+        items = []
+        for k, (vbo, ibo, tex, mat, alpha_mode) in enumerate(self._model_parts(path, model)):
+            vao = self.ctx.vertex_array(
+                self.tex_prog,
+                [(vbo, "3f 3f 2f", "in_pos", "in_norm", "in_uv"),
+                 (inst, "3f 3f 3f 1f/i", "i_off", "i_scale", "i_color", "i_rot")],
+                index_buffer=ibo)
+            # o buffer das instâncias é de todas as partes: só a primeira o libera
+            items.append((_ModelDraw(self.ctx, self.tex_prog, vao, tex, mat, alpha_mode), moderngl.TRIANGLES,
+                          len(rows),
+                          [inst] if k == 0 else []))
+        if not items:
+            inst.release()
+        return items
+
     def _upload(self, arr: SceneArrays) -> dict:
+        meshes, models = [], []
+        for key, rows in arr.instances.items():
+            if key.startswith(MODEL_PREFIX):
+                path = key[len(MODEL_PREFIX):]
+                models += self._vao_model(path, arr.models.get(path), rows)
+            elif (x := self._vao_instances(key, rows)):
+                meshes.append(x)
+        new = arr.model_errors - self._reported_errors
+        if new:
+            self._reported_errors |= new
+            self.modelError.emit("Modelo 3D: " + "; ".join(sorted(new)))
         return {
             "surfaces": [x for x in (self._vao_surface(arr.surfaces),) if x],
             "shadows": [x for x in (self._vao_lines(arr.shadows, moderngl.TRIANGLES),) if x],
             "lines": [x for x in (self._vao_lines(arr.lines),) if x],
-            "meshes": [x for m in MESHES if (x := self._vao_instances(m, arr.instances[m]))],
+            "meshes": meshes,
+            "models": models,
         }
 
     @staticmethod
@@ -425,7 +595,7 @@ class Viewport3D(QOpenGLWidget):
         # alfa separado: o framebuffer continua opaco (senão o Qt compõe o widget translúcido)
         ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA, moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA
         mvp = glmath.gl_bytes(self._mvp(cam, w, h))
-        for prog in (self.mesh_prog, self.surf_prog, self.line_prog):
+        for prog in (self.mesh_prog, self.surf_prog, self.line_prog, self.tex_prog):
             prog["mvp"].write(mvp)
 
         def render(items):
@@ -436,7 +606,7 @@ class Viewport3D(QOpenGLWidget):
         render(ground[:1])
         render(self._terrain_vao)
         render(ground[1:])
-        for key in ("surfaces", "shadows", "lines", "meshes"):
+        for key in ("surfaces", "shadows", "lines", "meshes", "models"):
             render(self._static.get(key, []) if isinstance(self._static, dict) else [])
             render(self._dynamic.get(key, []) if isinstance(self._dynamic, dict) else [])
         if gizmo and self.selection and self._gizmo_frame() is not None:

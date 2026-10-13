@@ -21,7 +21,7 @@ leafdraw = "leafdraw.app:main"
 include = ["leafdraw*"]
 
 [tool.setuptools.package-data]
-leafdraw = ["resources/*.json", "resources/*.png"]
+leafdraw = ["resources/*.json", "resources/*.png", "resources/models/*/*.glb", "resources/models/*/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

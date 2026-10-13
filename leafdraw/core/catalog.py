@@ -17,6 +17,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 DEFAULT_CATALOG = Path(__file__).resolve().parent.parent / "resources" / "catalog.json"
+MODELS_DIR = DEFAULT_CATALOG.parent / "models"  # modelos 3D (.glb) que acompanham o LeafDraw
+PROJECT_MODELS_DIR = DEFAULT_CATALOG.parents[2] / "modelos"  # biblioteca de modelos ao rodar do código-fonte
 
 # Símbolos 2D/3D suportados.
 SYMBOLS = {"arvore": "Árvore", "palmeira": "Palmeira", "arbusto": "Arbusto", "forracao": "Forração"}
@@ -46,6 +48,7 @@ class Species:
     notas: str = ""
     desenho_planta: Drawing | None = None  # None = símbolo automático
     desenho_vista: Drawing | None = None
+    modelo_3d: str = ""  # arquivo .glb/.gltf; vazio = forma procedural do símbolo
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -84,6 +87,20 @@ class PlantCatalog:
 
     def get(self, sid: str) -> Species | None:
         return self._user.get(sid) or self._builtin.get(sid) or self._project.get(sid)
+
+    def model_file(self, sp: Species | None) -> Path | None:
+        """Caminho do modelo 3D da espécie: absoluto, ou relativo à pasta de modelos
+        embutida, à biblioteca ``modelos/`` do projeto ou à pasta do catálogo do usuário.
+        None se não houver arquivo."""
+        if sp is None or not sp.modelo_3d:
+            return None
+        p = Path(sp.modelo_3d)
+        if p.is_absolute():
+            return p if p.is_file() else None
+        dirs = [MODELS_DIR, PROJECT_MODELS_DIR]
+        if self.user_path:
+            dirs += [self.user_path.parent / "models", self.user_path.parent]
+        return next((d / p for d in dirs if (d / p).is_file()), None)
 
     def all(self) -> list[Species]:
         merged = {**self._project, **self._builtin, **self._user}

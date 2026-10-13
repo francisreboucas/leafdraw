@@ -9,3 +9,7 @@ dist/
 # arquivos gerados a partir dos exemplos
 examples/*.dxf
 examples/*.pdf
+
+# biblioteca local de modelos 3D de uso pessoal (ex.: Casoca, cujos termos proíbem redistribuir).
+# A biblioteca distribuída fica em leafdraw/resources/models/.
+/modelos/

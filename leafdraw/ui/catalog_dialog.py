@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QApplication, QColorDialog, QComboBox, QDialog, Q
 
 from leafdraw.core.catalog import SYMBOLS, Species
 from leafdraw.core.dxf_io import dwg_supported, read_drawing
+from leafdraw.core.gltf import cached_model
 from leafdraw.core.symbol_blocks import MODEL_SPACE, block_drawing, list_blocks
 from leafdraw.ui.icons import color_icon
 from leafdraw.ui.symbols import elevation_pixmap, plan_pixmap, sp_icon
@@ -84,6 +85,21 @@ class CatalogDialog(QDialog):
         self.f_notas = QPlainTextEdit()
         self.f_notas.setFixedHeight(70)
         self.version_rows = {kind: self._version_row(kind) for kind in ("planta", "vista")}
+        self.f_modelo = QLineEdit()
+        self.f_modelo.setPlaceholderText("Automático (forma do símbolo)")
+        self.f_modelo.setClearButtonEnabled(True)
+        self.f_modelo.setToolTip("Modelo glTF 2.0 (.glb) usado na vista 3D. É ajustado à copa e à altura "
+                                 "da espécie; a base do modelo fica no chão.")
+        self.f_modelo.textChanged.connect(self._update_model_status)
+        self.model_status = QLabel()
+        self.model_status.setStyleSheet("color: #9aa5b1;")
+        pick_model = QPushButton("Escolher…")
+        pick_model.clicked.connect(self._pick_model)
+        model_row = QWidget()
+        mr = QHBoxLayout(model_row)
+        mr.setContentsMargins(0, 0, 0, 0)
+        mr.addWidget(self.f_modelo, 1)
+        mr.addWidget(pick_model)
         for w in (self.f_altura, self.f_copa):
             w.valueChanged.connect(self._update_previews)
         self.f_simbolo.currentIndexChanged.connect(self._update_previews)
@@ -101,6 +117,8 @@ class CatalogDialog(QDialog):
         form.addRow("Símbolo", self.f_simbolo)
         form.addRow("Versão Planta", self.version_rows["planta"][0])
         form.addRow("Versão Vista", self.version_rows["vista"][0])
+        form.addRow("Modelo 3D", model_row)
+        form.addRow("", self.model_status)
         form.addRow("Insolação", self.f_insol)
         form.addRow("Notas", self.f_notas)
         right = QWidget()
@@ -167,6 +185,7 @@ class CatalogDialog(QDialog):
         self.f_simbolo.setCurrentIndex(list(SYMBOLS).index(sp.simbolo))
         self._drawings = {"planta": sp.desenho_planta, "vista": sp.desenho_vista}
         self._update_previews()
+        self.f_modelo.setText(sp.modelo_3d)
         self.f_insol.setCurrentText(sp.insolacao)
         self.f_notas.setPlainText(sp.notas)
         removable = self.catalog.can_remove(sp.id)  # embutidas e de projeto não são excluídas
@@ -258,6 +277,33 @@ class CatalogDialog(QDialog):
             return
         self._set_drawing(kind, result)
 
+    # --- modelo 3D ----------------------------------------------------------
+
+    def _pick_model(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Modelo 3D da espécie", "", "glTF 2.0 (*.glb *.gltf)")
+        if path:
+            self.f_modelo.setText(path)
+
+    def _update_model_status(self, *_):
+        text = self.f_modelo.text().strip()
+        if not text:
+            self.model_status.setText("")
+            return
+        probe = Species(id="probe", nome_popular="", nome_cientifico="", categoria="", altura=1, copa=1,
+                        cor="#000000", modelo_3d=text)
+        path = self.catalog.model_file(probe)
+        if path is None:
+            self.model_status.setText("Arquivo não encontrado")
+            return
+        model, err = cached_model(path)
+        if model is None:
+            self.model_status.setText(err)
+            return
+        w, d, h = model.size
+        textured = any(p.material.image for p in model.primitives)
+        self.model_status.setText(f"{model.triangles:,} triângulos · {w:.2f} × {d:.2f} × {h:.2f} (original)"
+                                  .replace(",", ".") + (" · com textura" if textured else ""))
+
     def _pick_color(self):
         c = QColorDialog.getColor(QColor(self._color), self, "Cor do símbolo")
         if c.isValid():
@@ -276,7 +322,7 @@ class CatalogDialog(QDialog):
                        altura=self.f_altura.value(), copa=self.f_copa.value(), cor=self._color,
                        simbolo=self.f_simbolo.currentData(), insolacao=self.f_insol.currentText().strip(),
                        notas=self.f_notas.toPlainText().strip(), desenho_planta=self._drawings["planta"],
-                       desenho_vista=self._drawings["vista"])
+                       desenho_vista=self._drawings["vista"], modelo_3d=self.f_modelo.text().strip())
 
     def _save(self):
         if self._current is None:

@@ -9,6 +9,7 @@ from shapely.geometry import Polygon
 
 from leafdraw.core.entities import Contour, ElevationView, Hatch, Plant, PlantingArea, SpotHeight, Text
 from leafdraw.core.geom import tessellate
+from leafdraw.core.gltf import cached_model
 from leafdraw.core.terrain import flat_triangles
 from leafdraw.ui.plants3d import HIGHLIGHT, MESHES, plant_instances, shadow_disc
 
@@ -38,10 +39,29 @@ class SceneArrays:
     shadows: list = field(default_factory=list)  # (x, y, z, r, g, b, a) em trios
     instances: dict = field(default_factory=lambda: {m: [] for m in MESHES})
     pick: dict = field(default_factory=dict)  # eid -> PickShape
+    models: dict = field(default_factory=dict)  # caminho -> core.gltf.Model (chaves "glb:" das instâncias)
+    model_errors: set = field(default_factory=set)  # modelos que não abriram (a planta usa a forma procedural)
 
     def merge_instances(self, inst: dict):
         for k, v in inst.items():
-            self.instances[k] += v
+            self.instances.setdefault(k, []).extend(v)
+
+    def model_for(self, catalog, sp) -> str | None:
+        """Caminho do modelo 3D da espécie, já carregado em ``models``; None se não houver."""
+        path = catalog.model_file(sp) if sp is not None and hasattr(catalog, "model_file") else None
+        # espécie embutida sem o modelo instalado: forma procedural, sem aviso
+        builtin = hasattr(catalog, "origin") and catalog.origin(sp.id) == "embutida" if sp is not None else False
+        if sp is not None and sp.modelo_3d and path is None and not builtin:
+            self.model_errors.add(f"{sp.nome_popular}: modelo 3D não encontrado ({sp.modelo_3d})")
+        if path is None:
+            return None
+        model, err = cached_model(path)
+        if model is None:
+            self.model_errors.add(err)
+            return None
+        key = str(path)
+        self.models[key] = model
+        return key
 
 
 class ZMap:
@@ -174,7 +194,8 @@ def _plant(out: SceneArrays, e: Plant, catalog, zmap: ZMap, sel: bool):
     color = rgb(e.color or (sp.cor if sp else "#6cc070"))
     x, y = e.position
     z0 = zmap.at(x, y)
-    out.merge_instances(plant_instances(simbolo, x, y, z0, e.canopy, e.height, color, e.id, sel))
+    out.merge_instances(plant_instances(simbolo, x, y, z0, e.canopy, e.height, color, e.id, sel,
+                                        model=out.model_for(catalog, sp)))
     crown = e.height * (0.65 if simbolo == "arvore" else 0.9 if simbolo == "palmeira" else 0.4)
     out.shadows += shadow_disc(x, y, zmap.at, e.canopy / 2 * 1.05, crown, SHADOW_LIFT + 0.02)
     out.pick[e.id] = PickShape("point", [np.array([x, y, z0 + e.height * 0.6])], radius=e.canopy / 2)
@@ -194,7 +215,9 @@ def _planting(out: SceneArrays, e: PlantingArea, catalog, zmap: ZMap, sel: bool,
     simbolo = sp.simbolo if sp else "forracao"
     size = min(e.spacing * 1.05, sp.copa if sp else e.spacing)
     height = sp.altura if sp else 0.3
+    model = out.model_for(catalog, sp)
     for i, (x, y) in enumerate(pts):
         out.merge_instances(plant_instances(simbolo if simbolo in ("arbusto", "forracao") else "arbusto",
-                                            x, y, zmap.at(x, y), size, height, color, f"{e.id}:{i}", sel))
+                                            x, y, zmap.at(x, y), size, height, color, f"{e.id}:{i}", sel,
+                                            model=model))
     return budget - len(pts)

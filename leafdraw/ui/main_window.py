@@ -11,6 +11,7 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QApplication, QComboBox, QDockWidget, QFileDialog, QLabel, QMainWindow, QMenu,
                                QMessageBox, QSplitter, QStyle, QTabWidget, QToolBar, QToolButton, QUndoView)
 
+from leafdraw.core import gltf
 from leafdraw.core.catalog import default_catalog
 from leafdraw.core.commands import AddEntities, RemoveEntities, ReplaceEntities
 from leafdraw.core.document import Document
@@ -90,6 +91,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.doc = Document(self)
         self.catalog = default_catalog(user_catalog_path())
+        gltf.DISK_CACHE_DIR = user_catalog_path().parent / "cache" / "modelos3d"
         self.last_command: str | None = None
         self.resize(1500, 900)
 
@@ -129,6 +131,7 @@ class MainWindow(QMainWindow):
         self.composer.openInModel.connect(self._open_region_in_model)
         self.view3d.picked.connect(self._on_3d_pick)
         self.view3d.transformRequested.connect(self._apply_3d_transform)
+        self.view3d.modelError.connect(lambda msg: self.statusBar().showMessage(msg, 10000))
         v.scene().selectionChanged.connect(lambda: self.view3d.set_selection(v.selected_ids()))
         self.composer.editProjectRequested.connect(self.edit_project)
         self.cmdline.set_prompt(v.tool.hint())

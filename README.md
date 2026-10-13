@@ -82,6 +82,7 @@ leafdraw/
     symbol_blocks.py blocos DXF/DWG como desenho próprio (versão Planta ou Vista) de uma espécie
     commands.py    AddEntities / RemoveEntities / ReplaceEntities (QUndoCommand)
     catalog.py     catálogo de espécies (resources/catalog.json)
+    gltf.py        leitura de modelos glTF 2.0 (.glb/.gltf) para a vegetação 3D
     fileio.py      arquivo .leaf (zip com document.json)
   ui/
     main_window.py janela, menus, barras, docks, status
@@ -192,6 +193,31 @@ planta, ou dê duplo clique nela e clique no desenho.
   viram curvas de nível; POINT com Z vira cota de nível.
 - Plantas 3D procedurais: copas irregulares, palmeiras com folhas, arbustos orgânicos,
   variação natural de tamanho/cor/rotação e sombras difusas no chão.
+- **Modelos 3D próprios** (glTF 2.0, `.glb` ou `.gltf`): no catálogo de espécies, campo
+  "Modelo 3D". O modelo é ajustado à copa e à altura da espécie (base no chão) e desenhado
+  por instancing, com textura de cor, folhas recortadas por alfa (`alphaMode: MASK`) e
+  iluminação nas duas faces (`doubleSided`). Exporte do Blender sem compressão (Draco e
+  meshopt não são lidos). Caminhos relativos são procurados em `leafdraw/resources/models`
+  e na pasta do catálogo do usuário. Se o arquivo não abrir, a planta volta à forma
+  procedural e a barra de status avisa. `examples/make_test_tree.py` gera uma árvore de
+  teste (`examples/modelos/arvore_teste.glb`, CC0).
+- **Compactar modelos**: `python -m leafdraw.compactar modelos/ -o modelos/compactados`.
+  Junta as peças por material (exportadores como o SketchUp gravam um nó por folha), funde
+  vértices repetidos, marca texturas transparentes como recorte e reduz texturas acima de
+  2048 px (`--max-textura`). A geometria não é simplificada; os originais não são alterados.
+- **Versão leve**: `python -m leafdraw.compactar modelos -o modelos/leves --leve 20000`
+  grava cada modelo com até ~20 mil triângulos. Tronco e galhos são simplificados por
+  agrupamento de vértices; folhas e flores, peça por peça, e se preciso a copa é raleada
+  com as folhas restantes aumentadas para manter a cobertura (`leafdraw/core/meshlod.py`).
+- **Biblioteca distribuída**: `leafdraw/resources/models/` vai no instalador e só recebe modelos
+  que podem ser redistribuídos (hoje, os do Poly Haven, CC0, em `polyhaven/`, com origem e
+  autores em `POLYHAVEN.md`). O catálogo embutido aponta para eles com caminhos relativos.
+  Modelos de uso pessoal ficam fora do repositório (a pasta `modelos/` na raiz é ignorada
+  pelo git) e são associados às espécies pelo catálogo do usuário.
+- **Poly Haven** (CC0): `python -m leafdraw.polyhaven fern_02 shrub_02` baixa o glTF 1k só com geometria e texturas de cor, junta a máscara de transparência das
+  folhas (distribuída à parte, em JPEG), separa conjuntos de variações em modelos próprios
+  e grava `.glb` compactados, com origem e autores em `POLYHAVEN.md`.
+  `python -m leafdraw.polyhaven --listar plants` lista o que existe.
 
 ## Vistas (elevações)
 
