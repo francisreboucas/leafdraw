@@ -23,6 +23,9 @@ PROJECT_MODELS_DIR = DEFAULT_CATALOG.parents[2] / "modelos"  # biblioteca de mod
 # Símbolos 2D/3D suportados.
 SYMBOLS = {"arvore": "Árvore", "palmeira": "Palmeira", "arbusto": "Arbusto", "forracao": "Forração"}
 
+# Origem da espécie em relação à flora brasileira ("" = não informada).
+ORIGENS = {"": "Não informada", "nativa": "Nativa", "exotica": "Exótica"}
+
 # Desenho próprio (bloco importado): ((fechado, ((x, y), ...)), ...) em unidades normalizadas.
 # Planta: centrado na origem, cabe no raio 1. Vista: x em [-0,5; 0,5], y em [0; 1] (base no chão).
 Drawing = tuple[tuple[bool, tuple[tuple[float, float], ...]], ...]
@@ -45,6 +48,7 @@ class Species:
     cor: str  # cor do símbolo
     simbolo: str = "arvore"
     insolacao: str = ""
+    origem: str = ""  # chave de ORIGENS
     notas: str = ""
     desenho_planta: Drawing | None = None  # None = símbolo automático
     desenho_vista: Drawing | None = None
@@ -62,6 +66,8 @@ class Species:
         sp = Species(**d)
         if sp.simbolo not in SYMBOLS:
             raise ValueError(f"{sp.id}: símbolo desconhecido {sp.simbolo!r}")
+        if sp.origem not in ORIGENS:
+            raise ValueError(f"{sp.id}: origem desconhecida {sp.origem!r}")
         return sp
 
 

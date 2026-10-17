@@ -269,7 +269,7 @@ def draw_plant_table(painter: QPainter | None, el: PlantTableElement, ctx: Rende
     w = el.w
     rows = plant_schedule(ctx.doc, ctx.catalog)
     areas = area_schedule(ctx.doc) if el.show_areas else []
-    widths = [0.09, 0.29, 0.33, 0.09, 0.09, 0.11]
+    widths = [0.08, 0.25, 0.29, 0.10, 0.09, 0.09, 0.10]
     xs = [0.0]
     for f in widths:
         xs.append(xs[-1] + f * w)
@@ -296,7 +296,7 @@ def draw_plant_table(painter: QPainter | None, el: PlantTableElement, ctx: Rende
     draw_text(painter, w / 2, y + rh * 1.3 * 0.68, el.title, th * 1.25, align="center", bold=True)
     y += rh * 1.3
     hline(y, thick)
-    heads = ["", "NOME POPULAR", "NOME CIENTÍFICO", "ALT. (m)", "COPA (m)", "QTD."]
+    heads = ["", "NOME POPULAR", "NOME CIENTÍFICO", "ORIGEM", "ALT. (m)", "COPA (m)", "QTD."]
     top_rows = y
     for i, t in enumerate(heads):
         draw_text(painter, (xs[i] + xs[i + 1]) / 2, y + rh * 0.68, t, th * 0.8, align="center", bold=True,
@@ -315,24 +315,25 @@ def draw_plant_table(painter: QPainter | None, el: PlantTableElement, ctx: Rende
         draw_text(painter, xs[1] + 1.2, base, r.nome_popular, th, max_w=xs[2] - xs[1] - 2)
         f = th * 0.95
         draw_text(painter, xs[2] + 1.2, base, r.nome_cientifico, f, max_w=xs[3] - xs[2] - 2, color=QColor(40, 40, 40))
-        draw_text(painter, (xs[3] + xs[4]) / 2, base, _n(r.altura), th, align="center")
-        draw_text(painter, (xs[4] + xs[5]) / 2, base, _n(r.copa), th, align="center")
-        draw_text(painter, xs[6] - 1.5, base, str(r.total), th, align="right")
+        draw_text(painter, (xs[3] + xs[4]) / 2, base, r.origem, f, align="center", max_w=xs[4] - xs[3] - 1)
+        draw_text(painter, (xs[4] + xs[5]) / 2, base, _n(r.altura), th, align="center")
+        draw_text(painter, (xs[5] + xs[6]) / 2, base, _n(r.copa), th, align="center")
+        draw_text(painter, xs[-1] - 1.5, base, str(r.total), th, align="right")
         y += rh
         hline(y)
-    draw_text(painter, xs[5] - 1.5, y + rh * 0.68, "TOTAL DE MUDAS", th, align="right", bold=True)
-    draw_text(painter, xs[6] - 1.5, y + rh * 0.68, str(sum(r.total for r in rows)), th, align="right", bold=True)
+    draw_text(painter, xs[-2] - 1.5, y + rh * 0.68, "TOTAL DE MUDAS", th, align="right", bold=True)
+    draw_text(painter, xs[-1] - 1.5, y + rh * 0.68, str(sum(r.total for r in rows)), th, align="right", bold=True)
     vlines(top_rows, y)
     y += rh
     hline(y, thick)
     if areas:
         draw_text(painter, xs[1] + 1.2, y + rh * 0.68, "REVESTIMENTOS", th, bold=True)
-        draw_text(painter, xs[6] - 1.5, y + rh * 0.68, "ÁREA (m²)", th * 0.8, align="right", bold=True)
+        draw_text(painter, xs[-1] - 1.5, y + rh * 0.68, "ÁREA (m²)", th * 0.8, align="right", bold=True)
         y += rh
         hline(y)
         for a in areas:
             draw_text(painter, xs[1] + 1.2, y + rh * 0.68, a.label, th)
-            draw_text(painter, xs[6] - 1.5, y + rh * 0.68, _n(a.area), th, align="right")
+            draw_text(painter, xs[-1] - 1.5, y + rh * 0.68, _n(a.area), th, align="right")
             y += rh
             hline(y)
     painter.setPen(thick)

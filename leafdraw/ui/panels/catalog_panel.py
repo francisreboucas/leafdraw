@@ -6,6 +6,7 @@ from PySide6.QtGui import QDrag, QFont
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QPushButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from leafdraw.core.catalog import ORIGENS
 from leafdraw.ui.symbols import elevation_pixmap, plan_pixmap, sp_icon
 from leafdraw.ui.viewport2d import SPECIES_MIME
 
@@ -159,9 +160,10 @@ class CatalogPanel(QWidget):
         self.versions.show()
         origin = self.catalog.origin(sp.id)
         tag = f" <span style='color:#e0b050'>[{origin}]</span>" if origin != "embutida" else ""
+        origem = f"{ORIGENS[sp.origem]} · " if sp.origem else ""
         self.details.setText(
             f"<b>{sp.nome_popular}</b> — <i>{sp.nome_cientifico}</i>{tag}<br>"
-            f"Altura {fmt_m(sp.altura)} · Copa {fmt_m(sp.copa)} · {sp.insolacao}<br>"
+            f"{origem}Altura {fmt_m(sp.altura)} · Copa {fmt_m(sp.copa)} · {sp.insolacao}<br>"
             f"<span style='color:#9aa5b1'>{sp.notas}</span>"
         )
 

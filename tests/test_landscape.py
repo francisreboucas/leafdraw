@@ -101,7 +101,7 @@ def test_schedule_and_csv():
     areas = area_schedule(doc)
     assert areas[0].label == "Grama" and areas[0].area == pytest.approx(104) and areas[0].count == 2
     csv = to_csv(rows, areas)
-    assert "Ipê;Handroanthus;10,00;6,00;2;0;0,00;2" in csv and "Total de mudas;102" in csv
+    assert "Ipê;Handroanthus;;10,00;6,00;2;0;0,00;2" in csv and "Total de mudas;102" in csv
 
 
 def test_user_catalog_and_project_species(tmp_path):
@@ -109,7 +109,8 @@ def test_user_catalog_and_project_species(tmp_path):
     cat = PlantCatalog.load(user_path=user)
     sid = cat.new_id("Eugenia uniflora")
     assert sid != "eugenia-uniflora"  # já existe no embutido
-    mine = Species(sid, "Pitanga anã", "Eugenia uniflora", "Frutíferas", 2, 1.5, "#aa3333", "arbusto")
+    mine = Species(sid, "Pitanga anã", "Eugenia uniflora", "Frutíferas", 2, 1.5, "#aa3333", "arbusto",
+                   origem="nativa")
     cat.upsert(mine)
     assert PlantCatalog.load(user_path=user).get(sid) == mine
     assert cat.origin(sid) == "usuário"
@@ -124,6 +125,18 @@ def test_user_catalog_and_project_species(tmp_path):
     assert [s.id for s in added] == [sid]
     assert other_cat.origin(sid) == "projeto"
     assert other_cat.get(sid).nome_popular == "Pitanga anã"
+    assert other_cat.get(sid).origem == "nativa"
+
+
+def test_species_origem():
+    cat = PlantCatalog.load()
+    assert cat.get("handroanthus-albus").origem == "nativa"
+    assert cat.get("agapanthus-africanus").origem == "exotica"
+    assert Species.from_dict({"id": "x", "nome_popular": "X", "nome_cientifico": "X x", "categoria": "Árvores",
+                              "altura": 1, "copa": 1, "cor": "#000000"}).origem == ""  # catálogos antigos
+    with pytest.raises(ValueError):
+        Species.from_dict({"id": "x", "nome_popular": "X", "nome_cientifico": "X x", "categoria": "Árvores",
+                           "altura": 1, "copa": 1, "cor": "#000000", "origem": "alienigena"})
 
 
 def test_planting_rotation_keeps_count():

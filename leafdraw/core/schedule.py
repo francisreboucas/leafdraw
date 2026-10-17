@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from leafdraw.core.catalog import ORIGENS
 from leafdraw.core.entities import HATCH_PATTERNS, Hatch, Plant, PlantingArea
 
 
@@ -12,6 +13,7 @@ class PlantRow:
     nome_popular: str
     nome_cientifico: str
     categoria: str
+    origem: str  # rótulo de ORIGENS, "" se não informada
     altura: float
     copa: float
     individual: int = 0  # plantas isoladas
@@ -41,6 +43,7 @@ def plant_schedule(doc, catalog) -> list[PlantRow]:
                 nome_popular=sp.nome_popular if sp else sid,
                 nome_cientifico=sp.nome_cientifico if sp else "",
                 categoria=sp.categoria if sp else "",
+                origem=ORIGENS[sp.origem] if sp and sp.origem else "",
                 altura=sp.altura if sp else 0.0,
                 copa=sp.copa if sp else 0.0,
             )
@@ -74,12 +77,12 @@ def _n(v: float, decimals: int = 2) -> str:
 
 def to_csv(plants: list[PlantRow], areas: list[AreaRow]) -> str:
     """CSV com ';' e vírgula decimal (abre direto no Excel em pt-BR)."""
-    lines = ["Categoria;Nome popular;Nome científico;Altura (m);Copa (m);Isoladas;Em maciço;"
+    lines = ["Categoria;Nome popular;Nome científico;Origem;Altura (m);Copa (m);Isoladas;Em maciço;"
              "Área de maciço (m²);Total (un)"]
     for r in plants:
-        lines.append(";".join([r.categoria, r.nome_popular, r.nome_cientifico, _n(r.altura), _n(r.copa),
+        lines.append(";".join([r.categoria, r.nome_popular, r.nome_cientifico, r.origem, _n(r.altura), _n(r.copa),
                                str(r.individual), str(r.massed), _n(r.massed_area), str(r.total)]))
-    lines.append(f";;;;;;;Total de mudas;{sum(r.total for r in plants)}")
+    lines.append(f";;;;;;;;Total de mudas;{sum(r.total for r in plants)}")
     if areas:
         lines += ["", "Revestimento;Área (m²);Hachuras"]
         lines += [f"{a.label};{_n(a.area)};{a.count}" for a in areas]

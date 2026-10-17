@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QColorDialog, QComboBox, QDialog, Q
                                QListWidgetItem, QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout,
                                QWidget)
 
-from leafdraw.core.catalog import SYMBOLS, Species
+from leafdraw.core.catalog import ORIGENS, SYMBOLS, Species
 from leafdraw.core.dxf_io import dwg_supported, read_drawing
 from leafdraw.core.gltf import cached_model
 from leafdraw.core.symbol_blocks import MODEL_SPACE, block_drawing, list_blocks
@@ -79,6 +79,9 @@ class CatalogDialog(QDialog):
         self.f_simbolo = QComboBox()
         for key, name in SYMBOLS.items():
             self.f_simbolo.addItem(name, key)
+        self.f_origem = QComboBox()
+        for key, name in ORIGENS.items():
+            self.f_origem.addItem(name, key)
         self.f_insol = QComboBox()
         self.f_insol.setEditable(True)
         self.f_insol.addItems(INSOLACAO)
@@ -111,6 +114,7 @@ class CatalogDialog(QDialog):
         form.addRow("Nome popular", self.f_popular)
         form.addRow("Nome científico", self.f_cientifico)
         form.addRow("Categoria", self.f_categoria)
+        form.addRow("Origem", self.f_origem)
         form.addRow("Altura adulta", self.f_altura)
         form.addRow("Diâmetro da copa", self.f_copa)
         form.addRow("Cor do símbolo", self.f_cor)
@@ -175,10 +179,11 @@ class CatalogDialog(QDialog):
 
     def _load(self, sp: Species):
         origin = self.catalog.origin(sp.id) or "nova"
-        self.origin.setText(f"Origem: {origin} · id {sp.id}")
+        self.origin.setText(f"Fonte: {origin} · id {sp.id}")
         self.f_popular.setText(sp.nome_popular)
         self.f_cientifico.setText(sp.nome_cientifico)
         self.f_categoria.setCurrentText(sp.categoria)
+        self.f_origem.setCurrentIndex(list(ORIGENS).index(sp.origem))
         self.f_altura.setValue(sp.altura)
         self.f_copa.setValue(sp.copa)
         self._set_color(sp.cor)
@@ -321,6 +326,7 @@ class CatalogDialog(QDialog):
         return Species(id=sid, nome_popular=popular, nome_cientifico=cientifico, categoria=categoria,
                        altura=self.f_altura.value(), copa=self.f_copa.value(), cor=self._color,
                        simbolo=self.f_simbolo.currentData(), insolacao=self.f_insol.currentText().strip(),
+                       origem=self.f_origem.currentData(),
                        notas=self.f_notas.toPlainText().strip(), desenho_planta=self._drawings["planta"],
                        desenho_vista=self._drawings["vista"], modelo_3d=self.f_modelo.text().strip())
 

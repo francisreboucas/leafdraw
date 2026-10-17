@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QPushButton, QT
 from leafdraw.core.schedule import area_schedule, plant_schedule
 
 ROLE_ID = Qt.ItemDataRole.UserRole
-COLUMNS = ["Espécie", "Nome científico", "Isoladas", "Maciço", "Área (m²)", "Total"]
+COLUMNS = ["Espécie", "Nome científico", "Origem", "Isoladas", "Maciço", "Área (m²)", "Total"]
 
 
 def _n(v: float) -> str:
@@ -81,13 +81,13 @@ class SchedulePanel(QWidget):
                 head.setFont(0, bold)
                 head.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 self.tree.addTopLevelItem(head)
-            it = QTreeWidgetItem([r.nome_popular, r.nome_cientifico, str(r.individual or ""),
+            it = QTreeWidgetItem([r.nome_popular, r.nome_cientifico, r.origem, str(r.individual or ""),
                                   str(r.massed or ""), _n(r.massed_area) if r.massed_area else "", str(r.total)])
             it.setData(0, ROLE_ID, r.species)
             f = QFont(self.tree.font())
             f.setItalic(True)
             it.setFont(1, f)
-            for c in range(2, len(COLUMNS)):
+            for c in range(3, len(COLUMNS)):
                 it.setTextAlignment(c, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.tree.addTopLevelItem(it)
         areas = area_schedule(self.doc)
@@ -97,8 +97,8 @@ class SchedulePanel(QWidget):
             head.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.tree.addTopLevelItem(head)
             for a in areas:
-                it = QTreeWidgetItem([a.label, f"{a.count} hachura(s)", "", "", _n(a.area), ""])
-                it.setTextAlignment(4, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                it = QTreeWidgetItem([a.label, f"{a.count} hachura(s)", "", "", "", _n(a.area), ""])
+                it.setTextAlignment(5, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.tree.addTopLevelItem(it)
         total = sum(r.total for r in plants)
         self.summary.setText(f"{len(plants)} espécie(s) · {total} muda(s)")
