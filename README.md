@@ -28,9 +28,13 @@ Como o instalador ainda não é assinado digitalmente, o Windows SmartScreen pod
 ```powershell
 python -m venv .venv
 .venv\Scripts\python -m pip install -e .[dev]
+cargo build --release --manifest-path tools\dwgconv\Cargo.toml   # conversor DWG (requer Rust)
 .venv\Scripts\python -m leafdraw            # ou: leafdraw projeto.leaf
 .venv\Scripts\python -m pytest              # testes do núcleo
 ```
+
+Sem o conversor compilado o LeafDraw funciona normalmente, só não abre nem salva DWG.
+O Rust se instala por [rustup.rs](https://rustup.rs).
 
 ## Gerar o instalador
 
@@ -40,7 +44,7 @@ winget install JRSoftware.InnoSetup          # uma vez
 powershell -ExecutionPolicy Bypass -File packaging\build.ps1
 ```
 
-O script gera `dist\LeafDraw\` (PyInstaller em modo pasta: as DLLs do Qt ficam separadas e
+O script compila o conversor DWG, gera `dist\LeafDraw\` (PyInstaller em modo pasta: as DLLs do Qt ficam separadas e
 substituíveis, como pede a LGPL), roda `LeafDraw.exe --smoke-test` para validar o pacote
 (catálogo, documento, 3D/OpenGL e folhas), cria o instalador com o Inno Setup e um zip portátil.
 O ícone vem de `packaging/leaf.png` (`packaging/make_icon.py`).
@@ -74,6 +78,7 @@ leafdraw/
     editing.py     offset, explodir, contorno de hachura (Shapely)
     coords.py      interpretação da entrada digitada
     dxf_io.py      importação/exportação DXF e DWG (ezdxf)
+    dwg.py         ponte com o conversor DWG <-> DXF (tools/dwgconv)
     modify.py      aparar, estender, distribuir ao longo de caminhos
     schedule.py    quantitativos e CSV
     sheets.py      folhas, elementos (janela de vista, carimbo, quadro…) e layout padrão
@@ -274,8 +279,10 @@ escolher a unidade e trazer desenhos com coordenadas UTM para perto da origem.
 A exportação grava em metros (R2018); plantas viram blocos `LD_<espécie>`,
 que voltam a ser plantas ao reimportar.
 
-DWG funciona se o [ODA File Converter](https://www.opendesign.com/guestfiles/oda_file_converter)
-(gratuito) estiver instalado.
+DWG (R2000 a 2018+) é lido e gravado pelo `dwgconv` (`tools/dwgconv`), um conversor
+DWG <-> DXF em Rust sobre a biblioteca livre [acadrust](https://github.com/hakanaktt/acadrust),
+que acompanha o instalador; nenhum programa externo é necessário. A exportação DWG sai
+na versão 2018.
 
 ## Roteiro
 

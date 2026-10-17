@@ -1,0 +1,15 @@
+[package]
+name = "dwgconv"
+version = "0.1.0"
+edition = "2024"
+description = "Conversor DWG <-> DXF do LeafDraw (motor DWG, sobre a acadrust)"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+acadrust = "=0.6.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

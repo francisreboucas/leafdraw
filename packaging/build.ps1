@@ -7,6 +7,10 @@ $py = Join-Path $root ".venv\Scripts\python.exe"
 $version = (& $py -c "import leafdraw; print(leafdraw.__version__)").Trim()
 Write-Host "LeafDraw $version"
 
+# conversor DWG (Rust): https://rustup.rs
+cargo build --release --locked --manifest-path tools\dwgconv\Cargo.toml
+if ($LASTEXITCODE -ne 0) { throw "compilação do dwgconv falhou" }
+
 & $py packaging\make_icon.py
 & $py -m PyInstaller packaging\leafdraw.spec --noconfirm --distpath dist --workpath build
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller falhou" }

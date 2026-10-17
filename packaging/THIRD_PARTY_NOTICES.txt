@@ -19,6 +19,11 @@ moderngl e glcontext — MIT (licenses/moderngl, licenses/glcontext)
 NumPy — BSD 3-Clause e componentes listados (licenses/numpy)
 Shapely — BSD 3-Clause (licenses/shapely); inclui GEOS — LGPL v2.1 (licenses/shapely/LICENSE_GEOS)
 ezdxf — MIT (licenses/ezdxf)
+dwgconv (conversor DWG do LeafDraw, pasta "dwgconv") — GPL v3, código em tools/dwgconv
+  acadrust — Mozilla Public License 2.0 (licenses/dwgconv/acadrust)
+    Código-fonte: https://github.com/hakanaktt/acadrust  e  https://crates.io/crates/acadrust
+  Demais crates Rust usadas pelo conversor — MIT, Apache 2.0, Zlib, BSD, Unicode e similares
+    (licenças em licenses/dwgconv/<crate>; versões exatas em tools/dwgconv/Cargo.lock)
 fontTools — MIT (licenses/fonttools)
 pyparsing — MIT (licenses/pyparsing)
 typing_extensions — PSF (licenses/typing_extensions)

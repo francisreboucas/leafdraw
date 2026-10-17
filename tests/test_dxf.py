@@ -2,6 +2,7 @@ import ezdxf
 import pytest
 
 from leafdraw.core.commands import AddEntities
+from leafdraw.core import dwg
 from leafdraw.core.document import Document
 from leafdraw.core.dxf_io import export_dxf, import_drawing, read_drawing
 from leafdraw.core.entities import Arc, Circle, Contour, Dimension, Hatch, Line, Plant, Polyline, SpotHeight, Text
@@ -14,7 +15,9 @@ def _kinds(entities):
     return out
 
 
-def test_export_import_roundtrip(tmp_path):
+@pytest.mark.parametrize("ext", [".dxf", pytest.param(".dwg", marks=pytest.mark.skipif(
+    not dwg.available(), reason="dwgconv não compilado (cargo build --release em tools/dwgconv)"))])
+def test_export_import_roundtrip(tmp_path, ext):
     doc = Document()
     ents = [
         Line(p1=(0, 0), p2=(10, 0), layer="construcao"),
@@ -28,7 +31,7 @@ def test_export_import_roundtrip(tmp_path):
         Plant(position=(3, 3), species="eugenia-uniflora", canopy=4, height=5, layer="vegetacao"),
     ]
     doc.undo_stack.push(AddEntities(doc, ents))
-    path = str(tmp_path / "out.dxf")
+    path = str(tmp_path / f"out{ext}")
     export_dxf(doc, path)
 
     drawing = read_drawing(path)
@@ -108,3 +111,12 @@ def test_import_3d_lines_and_points(tmp_path):
     assert [e.elevation for e in got if isinstance(e, SpotHeight)] == [7.5]
     in_cm = imp.finalize(0.01, to_origin=True)
     assert [e.elevation for e in in_cm if isinstance(e, SpotHeight)] == [pytest.approx(0.075)]
+
+
+@pytest.mark.skipif(not dwg.available(), reason="dwgconv não compilado")
+def test_dwg_failed_write_keeps_existing_file(tmp_path):
+    path = tmp_path / "existente.dwg"
+    path.write_bytes(b"conteudo anterior")
+    with pytest.raises(RuntimeError):
+        dwg.write_dwg(ezdxf.new(), str(path), version="R1")  # versão inválida: o dwgconv recusa
+    assert path.read_bytes() == b"conteudo anterior"

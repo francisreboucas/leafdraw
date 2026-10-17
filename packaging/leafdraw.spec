@@ -3,7 +3,9 @@
 
 Uso:  pyinstaller packaging/leafdraw.spec --noconfirm
 """
+import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,6 +34,22 @@ for pkg in ("moderngl", "glcontext", "numpy", "shapely", "ezdxf", "fonttools", "
                 rel = f.parent.relative_to(info)
                 licenses.append((str(f), f"licenses/{pkg}/{rel.as_posix()}".rstrip("/.")))
 
+# --- conversor DWG (tools/dwgconv, compilado pelo build.ps1) e licenças das crates Rust ---
+DWGCONV = ROOT / "tools" / "dwgconv"
+DWGCONV_EXE = DWGCONV / "target" / "release" / "dwgconv.exe"
+if not DWGCONV_EXE.is_file():
+    raise SystemExit(f"{DWGCONV_EXE} não existe: rode 'cargo build --release' em tools/dwgconv")
+binaries = [(str(DWGCONV_EXE), "dwgconv")]
+meta = json.loads(subprocess.run(["cargo", "metadata", "--format-version", "1", "--locked"], cwd=DWGCONV,
+                                 capture_output=True, text=True, check=True).stdout)
+used = {n["id"] for n in meta["resolve"]["nodes"]}
+for pkg in meta["packages"]:
+    if pkg["id"] not in used or pkg["name"] == "dwgconv":
+        continue
+    for f in Path(pkg["manifest_path"]).parent.iterdir():
+        if f.is_file() and re.search(r"LICEN|COPYING|NOTICE|COPYRIGHT", f.name, re.I):
+            licenses.append((str(f), f"licenses/dwgconv/{pkg['name']}"))
+
 # módulos do Qt que o LeafDraw não usa (o PySide6 completo passa de 600 MB)
 QT_UNUSED = ["Qt3DAnimation", "Qt3DCore", "Qt3DExtras", "Qt3DInput", "Qt3DLogic", "Qt3DRender", "QtBluetooth",
              "QtCharts", "QtConcurrent", "QtDataVisualization", "QtDesigner", "QtGraphs", "QtGraphsWidgets",
@@ -47,6 +65,7 @@ excludes = [f"PySide6.{m}" for m in QT_UNUSED] + ["tkinter", "matplotlib", "IPyt
 a = Analysis(
     [str(ROOT / "packaging" / "leafdraw_launcher.py")],
     pathex=[str(ROOT)],
+    binaries=binaries,
     datas=datas + licenses,
     hiddenimports=["glcontext", "glcontext.wgl", "moderngl"],
     excludes=excludes,

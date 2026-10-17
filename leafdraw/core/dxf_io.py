@@ -1,4 +1,4 @@
-"""Importação e exportação DXF (e DWG via ODA File Converter, se instalado).
+"""Importação e exportação DXF e DWG (DWG pelo conversor ``dwgconv``, ver ``dwg.py``).
 
 A importação acontece em duas etapas: ``import_drawing`` converte tudo nas
 unidades nativas do arquivo; depois ``DxfImport.finalize`` aplica o fator de
@@ -7,8 +7,6 @@ unidade e o deslocamento escolhidos pelo usuário.
 from __future__ import annotations
 
 import math
-import os
-import platform
 import re
 from collections import Counter
 from dataclasses import dataclass, field, fields, replace
@@ -17,8 +15,8 @@ from pathlib import Path
 import ezdxf
 from ezdxf import colors as dxfcolors
 from ezdxf import path as dxfpath
-from ezdxf.addons import odafc
 
+from leafdraw.core import dwg
 from leafdraw.core.entities import (Arc, Circle, Contour, Dimension, ElevationView, Entity, Hatch, Line, Plant,
                                     Polyline, SpotHeight, Text, union_bounds)
 from leafdraw.core.elevation import compute_elevation, marker_geometry, title_position
@@ -40,36 +38,13 @@ DXF_TO_PATTERN = {v: k for k, v in PATTERN_TO_DXF.items()} | {"NET": "cross", "A
 PATTERN_SPACING = 3.175
 
 
-def _find_oda_converter() -> str | None:
-    """O instalador do ODA cria pastas com versão ("ODAFileConverter 27.9.0"), que o
-    caminho padrão do ezdxf não encontra; procura a versão mais nova em Program Files."""
-    found = []
-    for env in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
-        base = os.environ.get(env)
-        if base:
-            found += Path(base, "ODA").glob("ODAFileConverter*/ODAFileConverter.exe")
-
-    def version_key(p: Path):
-        return [int(n) for n in re.findall(r"\d+", p.parent.name)]
-
-    return str(max(found, key=version_key)) if found else None
-
-
 def dwg_supported() -> bool:
-    if odafc.is_installed():
-        return True
-    if platform.system() == "Windows" and (exe := _find_oda_converter()):
-        ezdxf.options.set("odafc-addon", "win_exec_path", f'"{exe}"')
-        return odafc.is_installed()
-    return False
+    return dwg.available()
 
 
 def read_drawing(path: str):
     if Path(path).suffix.lower() == ".dwg":
-        if not dwg_supported():
-            raise RuntimeError("Para abrir DWG instale o ODA File Converter (gratuito) "
-                               "em https://www.opendesign.com/guestfiles/oda_file_converter")
-        return odafc.readfile(path)
+        return dwg.read_dwg(path)
     from ezdxf import recover
 
     doc, _auditor = recover.readfile(path)
@@ -455,9 +430,7 @@ def export_dxf(doc, path: str, catalog=None):
             continue
         _export_entity(out, msp, e, attribs, catalog)
     if Path(path).suffix.lower() == ".dwg":
-        if not dwg_supported():
-            raise RuntimeError("Para salvar DWG instale o ODA File Converter.")
-        odafc.export_dwg(out, path, replace=True)
+        dwg.write_dwg(out, path)
     else:
         out.saveas(path)
 

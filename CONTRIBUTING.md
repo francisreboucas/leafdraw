@@ -24,6 +24,7 @@ git clone https://github.com/francisreboucas/leafdraw.git
 cd leafdraw
 python -m venv .venv
 .venv\Scripts\python -m pip install -e .[dev]
+cargo build --release --manifest-path tools\dwgconv\Cargo.toml   # conversor DWG (opcional, requer Rust)
 .venv\Scripts\python -m leafdraw            # executa o aplicativo
 .venv\Scripts\python -m pytest              # roda os testes
 ```

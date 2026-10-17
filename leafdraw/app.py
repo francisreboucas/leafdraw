@@ -39,8 +39,11 @@ def create_app(argv=None) -> QApplication:
 
 
 def _smoke_test(app, win, out_path: str):
-    """Verifica a instalação: catálogo, documento, 2D, 3D (OpenGL) e folhas; grava o resultado e sai."""
+    """Verifica a instalação: catálogo, documento, 2D, 3D (OpenGL), folhas e DWG; grava o resultado e sai."""
+    import tempfile
+
     from leafdraw.core.commands import AddEntities
+    from leafdraw.core.dxf_io import export_dxf, import_drawing, read_drawing
     from leafdraw.core.entities import Contour, Plant, Polyline
     from leafdraw.core.sheets import default_sheet
 
@@ -59,6 +62,12 @@ def _smoke_test(app, win, out_path: str):
         if img is None:
             raise RuntimeError("OpenGL não inicializou (render_image retornou None)")
         sheet = default_sheet(doc.bounds())
+        with tempfile.TemporaryDirectory(prefix="leafdraw-smoke-") as tmp:
+            dwg_path = str(Path(tmp) / "teste.dwg")
+            export_dxf(doc, dwg_path, win.catalog)
+            n_dwg = len(import_drawing(read_drawing(dwg_path), [sp.id]).entities)
+        if n_dwg != len(doc.entities):
+            raise RuntimeError(f"DWG: {len(doc.entities)} entidades gravadas, {n_dwg} lidas")
         info = win.view3d.gl_info
         # biblioteca de modelos 3D empacotada: todo modelo do catálogo embutido abre
         from leafdraw.core.catalog import MODELS_DIR, PlantCatalog
@@ -71,7 +80,7 @@ def _smoke_test(app, win, out_path: str):
             f"OK LeafDraw {__version__}\n"
             f"especies={len(win.catalog.all())} entidades={len(doc.entities)} "
             f"folha={sheet.paper} imagem3d={img.width()}x{img.height()} "
-            f"modelos3d={n_models} (catálogo: {len(builtin)} abertos)\n"
+            f"modelos3d={n_models} (catálogo: {len(builtin)} abertos) dwg={n_dwg}\n"
             f"GL={info.get('GL_VERSION', '?')} {info.get('GL_RENDERER', '?')}\n", encoding="utf-8")
         code = 0
     except Exception:
