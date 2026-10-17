@@ -89,7 +89,7 @@ Gera `dist/LeafDraw-<versão>-linux-<arq>.tar.gz` (pasta portátil com `instalar
 `dist/LeafDraw-<versão>-macos-<arq>.dmg` (com o `LeafDraw.app`), depois do mesmo autoteste; no Linux sem
 tela o autoteste roda num X virtual (`xvfb-run`). Cada sistema só gera o próprio pacote: o workflow
 [Build](.github/workflows/build.yml) do GitHub Actions gera os de Linux e macOS (arm64 e Intel) e, ao
-publicar uma tag `v*`, anexa-os à release.
+publicar uma tag `v*`, anexa-os à release junto com o `SHA256SUMS.txt` de todos os pacotes dela.
 
 ## Exemplo
 
@@ -325,11 +325,3 @@ DWG (R2000 a 2018+) é lido e gravado pelo `dwgconv` (`tools/dwgconv`), um conve
 DWG <-> DXF em Rust sobre a biblioteca livre [acadrust](https://github.com/hakanaktt/acadrust),
 que acompanha o instalador; nenhum programa externo é necessário. A exportação DWG sai
 na versão 2018.
-
-## Roteiro
-
-1. **Base** (feito): janela, docks, camadas, undo/redo, arquivo `.leaf`, 2D, 3D básico, catálogo
-2. **CAD 2D** (feito): arco, texto, cota, hachura, snaps, linha de comando, edição, DXF/DWG
-3. **Paisagismo** (feito): maciços, plantas em linha, rótulos, quantitativos, catálogo editável, aparar/estender, grips
-4. **Folhas** (feito): pranchas A0–A4, janelas de vista 2D/3D em escala, carimbo, quadro de vegetação, norte, escala gráfica, PDF e impressão
-5. **3D avançado** (feito): seleção por clique, gizmo 3D, terreno por curvas/cotas de nível, plantas procedurais e sombras

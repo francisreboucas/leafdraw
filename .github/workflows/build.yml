@@ -1,4 +1,5 @@
-# Gera o LeafDraw para Linux e macOS e, em tag v*, anexa os pacotes à release da tag (cria um rascunho se não houver).
+# Gera o LeafDraw para Linux e macOS e, em tag v*, anexa os pacotes à release da tag (cria um rascunho se não houver)
+# e atualiza o SHA256SUMS.txt (workflow sha256sums.yml).
 # O Windows continua com packaging/build.ps1 local: os runners Windows não têm OpenGL 3.3 para o autoteste.
 name: Build
 
@@ -77,3 +78,11 @@ jobs:
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --prerelease --title "$GITHUB_REF_NAME" --notes ""
           gh release upload "$GITHUB_REF_NAME" pacotes/* -R "$GITHUB_REPOSITORY" --clobber
+
+  sha256sums:
+    needs: release
+    permissions:
+      contents: write
+    uses: ./.github/workflows/sha256sums.yml
+    with:
+      tag: ${{ github.ref_name }}

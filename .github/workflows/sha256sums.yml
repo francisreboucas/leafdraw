@@ -1,0 +1,37 @@
+# Gera o SHA256SUMS.txt de todos os pacotes LeafDraw-* anexados a uma release e o anexa a ela (substitui o anterior).
+# Roda no fim do workflow Build, ao publicar a release (que pode ter recebido os arquivos do Windows depois)
+# e à mão, informando a tag.
+name: SHA256SUMS
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da release (ex.: v0.1.0-rc.1)"
+        type: string
+        required: true
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sums:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Somas de verificação
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          mkdir pacotes && cd pacotes
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" --pattern "LeafDraw-*"
+          sha256sum LeafDraw-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
