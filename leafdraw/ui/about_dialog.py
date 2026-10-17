@@ -8,7 +8,7 @@ from pathlib import Path
 
 import PySide6
 from PySide6.QtCore import Qt, QUrl, qVersion
-from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication
+from PySide6.QtGui import QDesktopServices, QFont, QFontDatabase, QGuiApplication
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
                                QTabWidget, QVBoxLayout, QWidget)
 
@@ -121,7 +121,7 @@ class AboutDialog(QDialog):
         info = system_info(gl_info)
         view = QPlainTextEdit(info)
         view.setReadOnly(True)
-        view.setFont(QFont("Consolas"))
+        view.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         copy = QPushButton("Copiar para a área de transferência")
         copy.clicked.connect(lambda: QGuiApplication.clipboard().setText(info))
         hint = QLabel("Inclua estas informações ao relatar um problema.")
@@ -141,7 +141,7 @@ class AboutDialog(QDialog):
         text = notices.read_text(encoding="utf-8") if notices else "Avisos de terceiros não encontrados."
         view = QPlainTextEdit(text)
         view.setReadOnly(True)
-        view.setFont(QFont("Consolas"))
+        view.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         row = QHBoxLayout()
         if license_file:
             b = QPushButton("Ver licença do LeafDraw (GPL v3)")

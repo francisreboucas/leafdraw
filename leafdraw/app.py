@@ -4,7 +4,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QIcon, QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 
@@ -89,6 +89,20 @@ def _smoke_test(app, win, out_path: str):
     QTimer.singleShot(0, lambda: app.exit(code))
 
 
+class _FileOpenFilter(QObject):
+    """No macOS o arquivo aberto pelo Finder chega como evento, não como argumento."""
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.win = win
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.FileOpen and event.file():
+            self.win.file_open(event.file())
+            return True
+        return False
+
+
 def main():
     args = sys.argv[1:]
     smoke_out = None
@@ -101,6 +115,8 @@ def main():
 
     win = MainWindow()
     win.show()
+    file_open = _FileOpenFilter(win)
+    app.installEventFilter(file_open)
     if smoke_out:
         QTimer.singleShot(1500, lambda: _smoke_test(app, win, smoke_out))
     elif args:

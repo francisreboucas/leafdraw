@@ -2,7 +2,7 @@
 
 [![Licença: GPL v3](https://img.shields.io/badge/licen%C3%A7a-GPLv3-blue.svg)](LICENSE)
 [![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)](https://github.com/francisreboucas/leafdraw/releases)
-[![Plataforma: Windows](https://img.shields.io/badge/plataforma-Windows%2010%20%7C%2011-0078D6.svg?logo=windows)](https://github.com/francisreboucas/leafdraw/releases)
+[![Plataformas: Windows, Linux, macOS](https://img.shields.io/badge/plataforma-Windows%20%7C%20Linux%20%7C%20macOS-0078D6.svg)](https://github.com/francisreboucas/leafdraw/releases)
 [![Feito no Brasil](https://img.shields.io/badge/feito%20no-Brasil-009c3b.svg?labelColor=ffdf00)](https://github.com/francisreboucas/leafdraw)
 
 CAD para paisagismo em Python, com Qt for Python (PySide6, LGPLv3) e moderngl.
@@ -23,6 +23,31 @@ uma versão portátil em `.zip`. Requer Windows 10/11 64 bits e placa de vídeo 
 Como o instalador ainda não é assinado digitalmente, o Windows SmartScreen pode avisar
 "o Windows protegeu o computador": clique em **Mais informações → Executar assim mesmo**.
 
+## Instalar (Linux)
+
+Baixe `LeafDraw-<versão>-linux-x86_64.tar.gz` nas
+[releases](https://github.com/francisreboucas/leafdraw/releases), extraia e rode:
+
+```sh
+tar -xzf LeafDraw-<versão>-linux-x86_64.tar.gz
+cd LeafDraw
+./LeafDraw                 # abre direto
+./instalar.sh              # opcional: põe no menu de aplicativos e associa os arquivos .leaf
+```
+
+Requer distribuição de 64 bits com glibc 2.35 ou mais nova (Ubuntu 22.04+, Debian 12+, Fedora 36+)
+e OpenGL 3.3. Se o Qt reclamar do plugin "xcb", instale `libxcb-cursor0` (Ubuntu/Debian).
+
+## Instalar (macOS)
+
+Baixe o `.dmg` da sua arquitetura nas [releases](https://github.com/francisreboucas/leafdraw/releases):
+`macos-arm64` para Apple Silicon (M1 em diante) ou `macos-x86_64` para Intel. Abra-o e arraste o
+LeafDraw para **Aplicativos**. Requer macOS 11 ou mais novo.
+
+Como o aplicativo ainda não é assinado nem notarizado pela Apple, na primeira vez o macOS o bloqueia:
+abra **Ajustes do Sistema → Privacidade e Segurança** e clique em **Abrir Mesmo Assim**
+(ou rode `xattr -dr com.apple.quarantine /Applications/LeafDraw.app` no Terminal).
+
 ## Executar a partir do código
 
 ```powershell
@@ -33,10 +58,14 @@ cargo build --release --manifest-path tools\dwgconv\Cargo.toml   # conversor DWG
 .venv\Scripts\python -m pytest              # testes do núcleo
 ```
 
+No Linux e no macOS é igual, trocando `.venv\Scripts\python` por `.venv/bin/python`.
+
 Sem o conversor compilado o LeafDraw funciona normalmente, só não abre nem salva DWG.
 O Rust se instala por [rustup.rs](https://rustup.rs).
 
 ## Gerar o instalador
+
+### Windows
 
 ```powershell
 .venv\Scripts\python -m pip install pyinstaller
@@ -48,6 +77,19 @@ O script compila o conversor DWG, gera `dist\LeafDraw\` (PyInstaller em modo pas
 substituíveis, como pede a LGPL), roda `LeafDraw.exe --smoke-test` para validar o pacote
 (catálogo, documento, 3D/OpenGL e folhas), cria o instalador com o Inno Setup e um zip portátil.
 O ícone vem de `packaging/leaf.png` (`packaging/make_icon.py`).
+
+### Linux e macOS
+
+```sh
+.venv/bin/python -m pip install pyinstaller
+bash packaging/build.sh
+```
+
+Gera `dist/LeafDraw-<versão>-linux-<arq>.tar.gz` (pasta portátil com `instalar.sh`) ou
+`dist/LeafDraw-<versão>-macos-<arq>.dmg` (com o `LeafDraw.app`), depois do mesmo autoteste; no Linux sem
+tela o autoteste roda num X virtual (`xvfb-run`). Cada sistema só gera o próprio pacote: o workflow
+[Build](.github/workflows/build.yml) do GitHub Actions gera os de Linux e macOS (arm64 e Intel) e, ao
+publicar uma tag `v*`, anexa-os à release.
 
 ## Exemplo
 

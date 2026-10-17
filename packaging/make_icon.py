@@ -2,6 +2,7 @@
 
 * leafdraw/resources/icon.png — ícone da janela (256 px)
 * packaging/leafdraw.ico      — ícone do executável e do instalador (16 a 256 px)
+* packaging/leafdraw.icns     — ícone do aplicativo no macOS (16 a 512 px)
 
 Uso: python packaging/make_icon.py
 """
@@ -17,6 +18,9 @@ from PySide6.QtGui import QGuiApplication, QImage
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "packaging" / "leaf.png"
 SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+# tipos PNG do ICNS: (código, lado em px)
+ICNS_TYPES = ((b"icp4", 16), (b"icp5", 32), (b"ic11", 32), (b"icp6", 64), (b"ic12", 64), (b"ic07", 128),
+              (b"ic08", 256), (b"ic13", 256), (b"ic09", 512), (b"ic14", 512))
 
 
 def scaled(src: QImage, size: int) -> QImage:
@@ -49,6 +53,12 @@ def write_ico(path: Path, images: list[tuple[int, bytes]]):
     path.write_bytes(header + entries + blobs)
 
 
+def write_icns(path: Path, images: dict[int, bytes]):
+    """ICNS com entradas PNG (macOS 10.7 em diante)."""
+    body = b"".join(code + struct.pack(">I", 8 + len(images[size])) + images[size] for code, size in ICNS_TYPES)
+    path.write_bytes(b"icns" + struct.pack(">I", 8 + len(body)) + body)
+
+
 def main():
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)
     src = QImage(str(SOURCE)).convertToFormat(QImage.Format.Format_ARGB32)
@@ -57,6 +67,8 @@ def main():
     imgs = {s: scaled(src, s) for s in SIZES}
     imgs[256].save(str(ROOT / "leafdraw" / "resources" / "icon.png"))
     write_ico(ROOT / "packaging" / "leafdraw.ico", [(s, png_bytes(imgs[s])) for s in SIZES])
+    imgs[512] = scaled(src, 512)
+    write_icns(ROOT / "packaging" / "leafdraw.icns", {size: png_bytes(imgs[size]) for _, size in ICNS_TYPES})
     print("icones gerados")
     del app
 

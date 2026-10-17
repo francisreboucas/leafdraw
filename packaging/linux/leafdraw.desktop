@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LeafDraw
+GenericName=CAD para paisagismo
+Comment=Projetos de paisagismo em 2D e 3D
+Exec=LeafDraw %f
+Icon=leafdraw
+Terminal=false
+Categories=Graphics;VectorGraphics;Engineering;
+MimeType=application/x-leafdraw;
+Keywords=CAD;paisagismo;DWG;DXF;plantas;
