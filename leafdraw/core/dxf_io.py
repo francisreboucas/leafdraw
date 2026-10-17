@@ -181,12 +181,12 @@ class _Importer:
         layer_name = e.dxf.get("layer", "0")
         if layer_name == "0" and not top:
             layer_name = parent_layer  # entidades na camada 0 herdam a camada do bloco
-        base = {"layer": self.layer_id(layer_name), "color": self.color(e, parent_color)}
+        handler = getattr(self, "_" + t.lower(), None)
+        if handler is None:
+            self.skipped[t] += 1
+            return
         try:
-            handler = getattr(self, "_" + t.lower(), None)
-            if handler is None:
-                self.skipped[t] += 1
-                return
+            base = {"layer": self.layer_id(layer_name), "color": self.color(e, parent_color)}
             handler(e, base, layer_name, depth)
         except Exception:  # entidade malformada: pula sem abortar a importação
             self.skipped[t] += 1
