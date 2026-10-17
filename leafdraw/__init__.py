@@ -1,3 +1,3 @@
 """LeafDraw — CAD para paisagismo."""
 
-__version__ = "0.1.0b3"
+__version__ = "0.1.0rc1"

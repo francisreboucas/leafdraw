@@ -1,5 +1,5 @@
 ; Instalador do LeafDraw (Inno Setup 6). Gerado por packaging/build.ps1:
-;   ISCC.exe /DAppVersion=0.1.0b3 /DDistDir=..\dist\LeafDraw packaging\installer.iss
+;   ISCC.exe /DAppVersion=0.1.0rc1 /DDistDir=..\dist\LeafDraw packaging\installer.iss
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
