@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeafDraw — CAD para paisagismo</title>
+<meta name="description" content="CAD livre para paisagismo: planta, plantio por espécie, terreno, vista 3D, elevações e folhas de impressão em PDF. Para Windows, Linux e macOS.">
+<meta property="og:title" content="LeafDraw — CAD para paisagismo">
+<meta property="og:description" content="Desenhe a planta, plante por espécie, veja em 3D e imprima as folhas. Software livre (GPLv3).">
+<meta property="og:image" content="https://francisreboucas.github.io/leafdraw/images/screenshot_2.png">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="images/leaf.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --papel: #f3f6ef;
+  --papel-2: #e7ede1;
+  --tinta: #13251b;
+  --tinta-2: #4b5d51;
+  --linha: #c5d0c2;
+  --folha: #128a3c;
+  --folha-clara: #b9f27c;
+  --ipe-roxo: #7b3fa6;
+  --ipe-amarelo: #d9a70f;
+  --agua: #3d86d6;
+  --tela: #1c2026;
+  --display: "Bricolage Grotesque", "Public Sans", system-ui, sans-serif;
+  --texto: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --largura: 1180px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--papel);
+  color: var(--tinta);
+  font: 400 17px/1.6 var(--texto);
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { display: block; max-width: 100%; }
+img { height: auto; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--ipe-roxo); outline-offset: 3px; border-radius: 2px; }
+.faixa { max-width: var(--largura); margin: 0 auto; padding: 0 24px; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.02; margin: 0; letter-spacing: -0.02em; }
+h2 { font-size: clamp(2rem, 4.4vw, 3.3rem); font-weight: 700; max-width: 18ch; }
+h3 { font-size: 1.35rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
+p { margin: 0; }
+.mono { font-family: var(--mono); }
+.cientifico { font-style: italic; }
+
+/* topo */
+.topo { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; padding-bottom: 20px; }
+.marca { display: flex; align-items: center; gap: 10px; font: 700 1.3rem/1 var(--display); text-decoration: none; letter-spacing: -0.02em; }
+.marca img { width: 30px; height: 30px; }
+.topo nav { display: flex; gap: 26px; font-size: .95rem; }
+.topo nav a { text-decoration: none; padding: 6px 0; border-bottom: 2px solid transparent; }
+.topo nav a:hover { border-bottom-color: var(--folha); }
+
+/* abertura */
+.abertura {
+  background-image:
+    linear-gradient(var(--papel-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--papel-2) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center top;
+}
+.abertura-grade { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; align-items: center; padding-top: 36px; padding-bottom: 56px; }
+.abertura h1 { font-size: clamp(2.9rem, 6.6vw, 5.4rem); font-weight: 700; letter-spacing: -0.035em; }
+.abertura h1 em { font-style: normal; color: var(--folha); }
+.abertura .chamada { margin-top: 24px; font-size: 1.15rem; max-width: 34ch; color: var(--tinta-2); }
+.acoes { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.botao {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px; border-radius: 999px;
+  font: 600 1rem/1 var(--texto); text-decoration: none;
+  border: 1.5px solid var(--tinta);
+  transition: transform .15s ease, background-color .15s ease, color .15s ease;
+}
+.botao:hover { transform: translateY(-2px); }
+.botao-cheio { background: var(--tinta); color: var(--papel); }
+.botao-cheio:hover { background: var(--folha); border-color: var(--folha); }
+.botao-vazio:hover { background: var(--tinta); color: var(--papel); }
+.sob-acoes { margin-top: 16px; font: 400 .82rem/1.5 var(--mono); color: var(--tinta-2); }
+
+/* planta desenhada */
+.planta { width: 100%; height: auto; }
+.planta .traco { fill: none; stroke: var(--tinta); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.planta .fino { stroke-width: 1; }
+.planta .cota { stroke: var(--ipe-amarelo); stroke-width: 1; fill: none; }
+.planta text { font-family: var(--mono); font-size: 11px; fill: var(--tinta); }
+.planta .cota-txt { fill: #9a7400; }
+.planta .rotulo { font-size: 12px; }
+.planta .desenha { stroke-dasharray: 1; stroke-dashoffset: 1; animation: desenha 1.1s cubic-bezier(.6,0,.2,1) forwards; animation-delay: var(--d, 0s); }
+.planta .surge { opacity: 0; animation: surge .7s ease forwards; animation-delay: var(--d, 0s); }
+@keyframes desenha { to { stroke-dashoffset: 0; } }
+@keyframes surge { to { opacity: 1; } }
+
+/* captura principal */
+.captura { margin: 0 auto; }
+.captura img { width: 100%; border-radius: 10px; border: 1px solid #0b0d10; box-shadow: 0 30px 60px -30px rgba(19, 37, 27, .55); background: var(--tela); }
+.captura figcaption { margin-top: 12px; font: 400 .8rem/1.5 var(--mono); color: var(--tinta-2); }
+.abertura .captura { padding-bottom: 72px; }
+
+/* seções */
+.secao { padding: 96px 0; }
+.secao-cabeca { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: end; margin-bottom: 56px; }
+.secao-cabeca p { color: var(--tinta-2); max-width: 46ch; }
+
+/* recursos */
+.recursos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 56px; }
+.recurso { border-top: 1.5px solid var(--tinta); padding: 22px 0 40px; }
+.recurso .aliases { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.alias { font: 500 .74rem/1 var(--mono); padding: 5px 7px; border: 1px solid var(--linha); border-radius: 4px; background: #fff; color: var(--tinta-2); }
+.recurso p { margin-top: 10px; color: var(--tinta-2); }
+
+/* folhas */
+.folhas { background: var(--tinta); color: var(--papel); }
+.folhas .secao-cabeca p { color: #b7c6ba; }
+.folhas h2 em { font-style: normal; color: var(--folha-clara); }
+.folhas .captura img { border-color: #000; box-shadow: none; }
+.folhas .captura figcaption { color: #b7c6ba; }
+.pranchas { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
+.pranchas li { border-top: 1px solid #40564a; padding-top: 16px; }
+.pranchas .escala { font: 400 .8rem/1 var(--mono); color: var(--folha-clara); }
+.pranchas strong { display: block; margin: 8px 0 4px; font: 700 1.15rem/1.2 var(--display); }
+.pranchas span.desc { color: #b7c6ba; font-size: .95rem; }
+
+/* linha de comando */
+.comando-grade { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 56px; align-items: start; }
+.comando-grade p { color: var(--tinta-2); margin-top: 20px; max-width: 40ch; }
+.comando-grade code { font: 500 .9em var(--mono); background: #fff; border: 1px solid var(--linha); border-radius: 4px; padding: 1px 5px; color: var(--tinta); }
+.terminal { background: var(--tela); border-radius: 10px; padding: 20px 22px 22px; font: 400 .92rem/1.6 var(--mono); color: #cfd6dc; }
+.terminal-titulo { color: #8b949e; font-size: .78rem; margin-bottom: 14px; }
+.terminal label { display: flex; align-items: center; gap: 10px; color: #e8c64a; }
+.terminal input {
+  flex: 1; min-width: 0; background: #11141a; border: 1px solid #3a414c; border-radius: 4px;
+  color: #fff; font: inherit; padding: 8px 10px; text-transform: uppercase;
+}
+.terminal input::placeholder { color: #6b7480; text-transform: none; }
+.terminal input:focus-visible { outline: 2px solid var(--folha-clara); outline-offset: 1px; }
+.resposta { min-height: 3.2em; margin-top: 12px; color: var(--folha-clara); }
+.resposta.erro { color: #e8a08f; }
+.atalhos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 16px; border-top: 1px solid #343b45; }
+.atalhos button {
+  font: 500 .78rem/1 var(--mono); color: #cfd6dc; background: #262b33; border: 1px solid #3a414c;
+  border-radius: 4px; padding: 6px 8px; cursor: pointer;
+}
+.atalhos button:hover { background: var(--folha); border-color: var(--folha); color: #fff; }
+
+/* baixar: carimbo */
+.baixar { background: var(--papel-2); }
+.carimbo { border: 2px solid var(--tinta); background: #fff; }
+.carimbo-topo { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; border-bottom: 2px solid var(--tinta); }
+.campo { padding: 10px 14px 12px; border-right: 1px solid var(--tinta); min-width: 0; }
+.campo:last-child { border-right: 0; }
+.campo small { display: block; font: 400 .66rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--tinta-2); margin-bottom: 7px; }
+.campo b { font: 700 1.15rem/1.1 var(--display); }
+.sistema { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 22px 14px; border-bottom: 1px solid var(--tinta); }
+.sistema:last-child { border-bottom: 0; }
+.sistema.meu { background: #f1fbe6; }
+.sistema h3 { font-size: 1.5rem; }
+.sistema .meu-aviso { display: none; margin-top: 6px; font: 400 .7rem/1 var(--mono); color: var(--folha); }
+.sistema.meu .meu-aviso { display: block; }
+.sistema .req { font-size: .93rem; color: var(--tinta-2); }
+.sistema details { margin-top: 8px; font-size: .9rem; }
+.sistema summary { cursor: pointer; font-weight: 600; width: fit-content; }
+.sistema details p { margin-top: 6px; color: var(--tinta-2); max-width: 62ch; }
+.sistema details code { font: 400 .82em var(--mono); background: var(--papel); padding: 1px 4px; border-radius: 3px; overflow-wrap: anywhere; }
+.arquivos { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.arquivo {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 18px;
+  padding: 11px 16px; border: 1.5px solid var(--tinta); border-radius: 6px;
+  text-decoration: none; font-weight: 600; font-size: .95rem; white-space: nowrap;
+  transition: background-color .15s ease, color .15s ease;
+}
+.arquivo:hover { background: var(--tinta); color: #fff; }
+.arquivo .tam { font: 400 .76rem/1 var(--mono); opacity: .7; }
+.sistema.meu .arquivo:first-child { background: var(--tinta); color: #fff; }
+.sistema.meu .arquivo:first-child:hover { background: var(--folha); border-color: var(--folha); }
+.baixar-nota { margin-top: 18px; font-size: .92rem; color: var(--tinta-2); }
+
+/* rodapé */
+.rodape { padding: 48px 0 56px; font-size: .92rem; color: var(--tinta-2); }
+.rodape-grade { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 24px; }
+.rodape nav { display: flex; flex-wrap: wrap; gap: 22px; }
+.rodape p { max-width: 52ch; }
+
+@media (max-width: 900px) {
+  .abertura-grade, .secao-cabeca, .comando-grade { grid-template-columns: minmax(0, 1fr); }
+  .abertura-grade { padding-top: 16px; }
+  .secao { padding: 64px 0; }
+  .secao-cabeca { margin-bottom: 36px; gap: 16px; }
+  .recursos { grid-template-columns: minmax(0, 1fr); }
+  .pranchas { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .carimbo-topo { grid-template-columns: 1fr 1fr; }
+  .carimbo-topo .campo:nth-child(2) { border-right: 0; }
+  .carimbo-topo .campo:nth-child(-n+2) { border-bottom: 1px solid var(--tinta); }
+  .sistema { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .arquivo { white-space: normal; }
+}
+@media (max-width: 560px) {
+  body { font-size: 16px; }
+  .faixa { padding: 0 16px; }
+  .topo nav { gap: 16px; }
+  .topo nav a.some { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .planta .desenha { animation: none; stroke-dashoffset: 0; }
+  .planta .surge { animation: none; opacity: 1; }
+  .botao { transition: none; }
+  .botao:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="abertura">
+  <div class="faixa topo">
+    <a class="marca" href="#"><img src="images/leaf.png" alt="" width="30" height="30">LeafDraw</a>
+    <nav aria-label="Principal">
+      <a class="some" href="#recursos">Recursos</a>
+      <a class="some" href="#folhas">Folhas</a>
+      <a href="#baixar">Baixar</a>
+      <a href="https://github.com/francisreboucas/leafdraw">GitHub</a>
+    </nav>
+  </div>
+
+  <div class="faixa abertura-grade">
+    <div>
+      <h1>CAD para paisagismo, do traço à <em>prancha</em>.</h1>
+      <p class="chamada">Desenhe a planta, plante por espécie, confira em 3D e imprima as folhas em PDF. Software livre, para Windows, Linux e macOS.</p>
+      <div class="acoes">
+        <a class="botao botao-cheio" id="baixar-principal" href="#baixar">Baixar o LeafDraw</a>
+        <a class="botao botao-vazio" href="https://github.com/francisreboucas/leafdraw">Ver o código</a>
+      </div>
+      <p class="sob-acoes">Versão <span data-versao>0.1.0 RC 1</span> · GPLv3 · gratuito</p>
+    </div>
+
+    <svg class="planta" viewBox="0 0 720 470" role="img" aria-label="Planta de um jardim de 30 por 20 metros com casa, espelho d'água, maciço de forração, árvores rotuladas, cotas e norte">
+      <defs>
+        <pattern id="pontos" width="9" height="9" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1.3" fill="#128a3c"/>
+          <circle cx="6.5" cy="6.5" r="1.3" fill="#128a3c"/>
+        </pattern>
+        <pattern id="deck" width="8" height="8" patternUnits="userSpaceOnUse">
+          <path d="M0 0V8" stroke="#a4703a" stroke-width="1.2"/>
+        </pattern>
+      </defs>
+
+      <!-- lote 30 x 20 m -->
+      <rect class="traco desenha" pathLength="1" x="70" y="60" width="480" height="320" fill="#fff" fill-opacity=".7"/>
+
+      <!-- maciço -->
+      <g class="surge" style="--d:.9s">
+        <path d="M80 70H280C250 100 180 92 152 132C120 176 132 250 108 370H80Z" fill="url(#pontos)" stroke="#128a3c" stroke-width="1"/>
+      </g>
+
+      <!-- casa e deck -->
+      <rect class="traco desenha" style="--d:.35s" pathLength="1" x="290" y="100" width="160" height="120" fill="#fff"/>
+      <g class="surge" style="--d:1s">
+        <rect x="290" y="220" width="100" height="46" fill="url(#deck)" stroke="#a4703a" stroke-width="1"/>
+        <text x="370" y="165" text-anchor="middle">RESIDÊNCIA</text>
+      </g>
+
+      <!-- caminho -->
+      <path class="traco fino desenha" style="--d:.6s" pathLength="1" d="M550 286C500 286 462 268 440 220"/>
+      <path class="traco fino desenha" style="--d:.7s" pathLength="1" d="M550 310C486 310 432 290 412 220"/>
+
+      <!-- espelho d'água -->
+      <g class="surge" style="--d:1.1s">
+        <circle cx="215" cy="290" r="27" fill="#3d86d6" fill-opacity=".28" stroke="#3d86d6" stroke-width="1.5"/>
+        <circle cx="215" cy="290" r="18" fill="none" stroke="#3d86d6" stroke-width="1"/>
+      </g>
+
+      <!-- plantas em linha -->
+      <g class="surge" style="--d:1.25s" fill="#128a3c" fill-opacity=".3" stroke="#128a3c" stroke-width="1">
+        <circle cx="140" cy="362" r="9"/><circle cx="162" cy="362" r="9"/><circle cx="184" cy="362" r="9"/>
+        <circle cx="206" cy="362" r="9"/><circle cx="228" cy="362" r="9"/><circle cx="250" cy="362" r="9"/>
+      </g>
+
+      <!-- árvores -->
+      <g class="surge" style="--d:1.35s" stroke-width="1.5">
+        <g stroke="#128a3c" fill="#128a3c" fill-opacity=".2">
+          <circle cx="122" cy="112" r="36"/><path d="M116 112h12M122 106v12" fill="none"/>
+          <circle cx="232" cy="165" r="29"/><path d="M226 165h12M232 159v12" fill="none"/>
+        </g>
+        <g stroke="#7b3fa6" fill="#7b3fa6" fill-opacity=".24">
+          <circle cx="505" cy="112" r="32"/><path d="M499 112h12M505 106v12" fill="none"/>
+          <circle cx="515" cy="194" r="25"/><path d="M509 194h12M515 188v12" fill="none"/>
+        </g>
+        <g stroke="#d9a70f" fill="#d9a70f" fill-opacity=".3">
+          <circle cx="300" cy="322" r="40"/><path d="M294 322h12M300 316v12" fill="none"/>
+        </g>
+        <g stroke="#128a3c" fill="none">
+          <circle cx="462" cy="330" r="17" stroke-dasharray="3 3"/>
+          <path d="M462 313v34M445 330h34M450 318l24 24M474 318l-24 24"/>
+        </g>
+      </g>
+
+      <!-- rótulos -->
+      <g class="surge" style="--d:1.7s">
+        <path class="traco fino" d="M534 124L574 152M538 186L574 152"/>
+        <text class="rotulo" x="580" y="150">2 Ipê-roxo</text>
+        <text class="rotulo cientifico" x="580" y="165" fill="#4b5d51" style="font-style:italic;font-size:10px">H. impetiginosus</text>
+        <path class="traco fino" d="M338 334L574 362"/>
+        <text class="rotulo" x="580" y="360">1 Ipê-amarelo</text>
+        <text class="rotulo" x="580" y="375" fill="#4b5d51" style="font-style:italic;font-size:10px">H. albus</text>
+      </g>
+
+      <!-- cotas -->
+      <g class="surge" style="--d:1.9s">
+        <path class="cota" d="M70 410H550M70 402v16M550 402v16M66 414l8-8M546 414l8-8"/>
+        <text class="cota-txt" x="310" y="403" text-anchor="middle">30,00</text>
+        <path class="cota" d="M42 60V380M34 60h16M34 380h16M38 64l8-8M38 384l8-8"/>
+        <text class="cota-txt" x="35" y="220" text-anchor="middle" transform="rotate(-90 35 220)">20,00</text>
+      </g>
+
+      <!-- norte e escala -->
+      <g class="surge" style="--d:2.1s">
+        <circle class="traco fino" cx="624" cy="74" r="20"/>
+        <path d="M624 58l7 30-7-6-7 6z" fill="#13251b"/>
+        <text x="624" y="46" text-anchor="middle" style="font-weight:500">N</text>
+        <path d="M580 428h32v5h-32z" fill="#13251b"/>
+        <path class="traco fino" d="M612 428h32v5h-32z"/>
+        <path d="M644 428h32v5h-32z" fill="#13251b"/>
+        <text x="580" y="450" style="font-size:10px">ESC. 1:100 · 0 2 4 6 m</text>
+      </g>
+    </svg>
+  </div>
+
+  <figure class="faixa captura">
+    <img src="images/screenshot_2.png" width="1920" height="1009" alt="Janela do LeafDraw com a planta do jardim e duas elevações à esquerda, a vista 3D ao centro e o catálogo de espécies com os quantitativos à direita">
+    <figcaption>examples/jardim_residencial.leaf — planta, vistas A e B, modelo 3D e quantitativos de um lote de 20 × 30 m.</figcaption>
+  </figure>
+</header>
+
+<main>
+  <section class="secao" id="recursos">
+    <div class="faixa">
+      <div class="secao-cabeca">
+        <h2>Feito para quem projeta jardins.</h2>
+        <p>O LeafDraw tem as ferramentas de um CAD 2D e entende o que é uma espécie, um maciço e um quadro de vegetação. As siglas abaixo são os comandos que você digita.</p>
+      </div>
+
+      <div class="recursos">
+        <article class="recurso">
+          <div class="aliases"><span class="alias">L</span><span class="alias">PL</span><span class="alias">REC</span><span class="alias">C</span><span class="alias">A</span><span class="alias">H</span><span class="alias">COT</span><span class="alias">TR</span><span class="alias">O</span></div>
+          <h3>Desenho 2D com linha de comando</h3>
+          <p>Linhas, polilinhas, arcos, hachuras e cotas, com snap em objetos, modo orto, grips e coordenadas digitadas. Tudo em metros, tudo desfazível.</p>
+        </article>
+        <article class="recurso">
+          <div class="aliases"><span class="alias">PLANTA</span><span class="alias">MAC</span><span class="alias">LIN</span><span class="alias">ETQ</span><span class="alias">QUANT</span></div>
+          <h3>Plantio por espécie</h3>
+          <p>Plantas isoladas, em linha ou em maciço com malha triangular ou quadrada. Rótulos contam as mudas e o painel de quantitativos soma por espécie e exporta CSV.</p>
+        </article>
+        <article class="recurso">
+          <div class="aliases"><span class="alias">CATALOGO</span></div>
+          <h3>Catálogo que você edita</h3>
+          <p>Espécies com nome popular e científico, altura, copa e símbolo. Crie as suas, importe blocos de DXF/DWG como símbolo e use modelos 3D em glTF. O projeto leva junto as espécies que usa.</p>
+        </article>
+        <article class="recurso">
+          <div class="aliases"><span class="alias">CN</span><span class="alias">NV</span><span class="alias">F5</span><span class="alias">F6</span><span class="alias">F7</span></div>
+          <h3>Terreno e vista 3D</h3>
+          <p>Curvas e cotas de nível viram um terreno triangulado. Plantas, pisos e maciços se assentam sobre ele, e a vista 3D acompanha a planta enquanto você desenha.</p>
+        </article>
+        <article class="recurso">
+          <div class="aliases"><span class="alias">VISTA</span><span class="alias">ELEV</span></div>
+          <h3>Elevações associativas</h3>
+          <p>Trace a linha de corte e escolha o lado: a vista é montada com a silhueta de cada espécie apoiada no terreno. Mover ou trocar uma planta refaz o desenho.</p>
+        </article>
+        <article class="recurso">
+          <div class="aliases"><span class="alias">IMPORTAR</span><span class="alias">EXPORTAR</span></div>
+          <h3>DXF e DWG sem programa externo</h3>
+          <p>Abre e grava DXF e DWG (R2000 a 2018), com camadas, blocos, hachuras e cotas. Levantamentos em UTM podem ser trazidos para perto da origem.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="secao folhas" id="folhas">
+    <div class="faixa">
+      <div class="secao-cabeca">
+        <h2>A prancha sai <em>pronta</em> do programa.</h2>
+        <p>Folhas A0 a A4 com margens ABNT, carimbo, norte, escala gráfica e quadro de vegetação preenchido pelo próprio desenho. O PDF é vetorial, no tamanho real do papel.</p>
+      </div>
+      <figure class="captura">
+        <img src="images/screenshot_3.png" width="1920" height="1032" loading="lazy" alt="Aba Folhas do LeafDraw mostrando uma prancha A2 com a planta de paisagismo, quadro de vegetação, norte, escala gráfica e carimbo">
+        <figcaption>Aba Folhas: cada janela de vista tem escala e camadas próprias.</figcaption>
+      </figure>
+      <ul class="pranchas">
+        <li><span class="escala">A2 · 1:100</span><strong>Planta de paisagismo</strong><span class="desc">Com quadro de vegetação, norte, escala e carimbo.</span></li>
+        <li><span class="escala">A2 · 1:200 e 1:100</span><strong>Implantação, topografia e vistas</strong><span class="desc">Planta sem vegetação e as elevações A e B.</span></li>
+        <li><span class="escala">A2 · 3D e 1:75</span><strong>Perspectiva e detalhe</strong><span class="desc">Janela 3D e o detalhe da entrada.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="secao" id="comandos">
+    <div class="faixa comando-grade">
+      <div>
+        <h2>Digite e desenhe.</h2>
+        <p>Qualquer tecla na planta vai para a linha de comando. Enter ou Espaço confirmam; Enter vazio repete o último comando.</p>
+        <p>Coordenadas: <code>10,5</code> absoluta, <code>@3,4</code> relativa, <code>@5&lt;45</code> polar, ou só um número para a distância na direção do cursor.</p>
+      </div>
+      <div class="terminal">
+        <div class="terminal-titulo">Linha de comando — experimente uma sigla</div>
+        <label>Comando:
+          <input id="cmd" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="L, MAC, VISTA…" aria-describedby="cmd-resposta">
+        </label>
+        <div class="resposta" id="cmd-resposta" aria-live="polite">Digite uma sigla ou escolha uma abaixo.</div>
+        <div class="atalhos" id="cmd-atalhos"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="secao baixar" id="baixar">
+    <div class="faixa">
+      <div class="secao-cabeca">
+        <h2>Baixar</h2>
+        <p>É uma versão candidata: funciona de ponta a ponta, mas ainda pode ter arestas. Se encontrar um problema, <a href="https://github.com/francisreboucas/leafdraw/issues">abra uma issue</a>.</p>
+      </div>
+
+      <div class="carimbo">
+        <div class="carimbo-topo">
+          <div class="campo"><small>Projeto</small><b>LeafDraw — CAD para paisagismo</b></div>
+          <div class="campo"><small>Versão</small><b data-versao>0.1.0 RC 1</b></div>
+          <div class="campo"><small>Data</small><b data-data>17/10/2026</b></div>
+          <div class="campo"><small>Licença</small><b>GPLv3</b></div>
+        </div>
+
+        <div class="sistema" data-so="windows">
+          <div><h3>Windows</h3><span class="meu-aviso">seu sistema</span></div>
+          <div>
+            <p class="req">Windows 10 ou 11 de 64 bits, placa de vídeo com OpenGL 3.3. Não precisa de administrador.</p>
+            <details>
+              <summary>Se o SmartScreen avisar</summary>
+              <p>O instalador ainda não é assinado digitalmente. Em “O Windows protegeu o computador”, clique em <strong>Mais informações → Executar assim mesmo</strong>.</p>
+            </details>
+          </div>
+          <div class="arquivos">
+            <a class="arquivo" data-arq="setup.exe" href="https://github.com/francisreboucas/leafdraw/releases/download/v0.1.0-rc.1/LeafDraw-0.1.0rc1-setup.exe">Instalador .exe <span class="tam">94 MB</span></a>
+            <a class="arquivo" data-arq="portable-win64.zip" href="https://github.com/francisreboucas/leafdraw/releases/download/v0.1.0-rc.1/LeafDraw-0.1.0rc1-portable-win64.zip">Portátil .zip <span class="tam">176 MB</span></a>
+          </div>
+        </div>
+
+        <div class="sistema" data-so="linux">
+          <div><h3>Linux</h3><span class="meu-aviso">seu sistema</span></div>
+          <div>
+            <p class="req">64 bits com glibc 2.35 ou mais nova (Ubuntu 22.04+, Debian 12+, Fedora 36+) e OpenGL 3.3.</p>
+            <details>
+              <summary>Como instalar</summary>
+              <p>Extraia o arquivo e rode <code>./LeafDraw</code>. O <code>./instalar.sh</code> é opcional: põe no menu de aplicativos e associa os arquivos .leaf. Se o Qt reclamar do plugin “xcb”, instale <code>libxcb-cursor0</code>.</p>
+            </details>
+          </div>
+          <div class="arquivos">
+            <a class="arquivo" data-arq="linux-x86_64.tar.gz" href="https://github.com/francisreboucas/leafdraw/releases/download/v0.1.0-rc.1/LeafDraw-0.1.0rc1-linux-x86_64.tar.gz">Pacote .tar.gz <span class="tam">219 MB</span></a>
+          </div>
+        </div>
+
+        <div class="sistema" data-so="macos">
+          <div><h3>macOS</h3><span class="meu-aviso">seu sistema</span></div>
+          <div>
+            <p class="req">macOS 11 ou mais novo. Abra o .dmg e arraste o LeafDraw para Aplicativos.</p>
+            <details>
+              <summary>Se o macOS bloquear a abertura</summary>
+              <p>O aplicativo ainda não é assinado nem notarizado. Abra <strong>Ajustes do Sistema → Privacidade e Segurança</strong> e clique em <strong>Abrir Mesmo Assim</strong>, ou rode <code>xattr -dr com.apple.quarantine /Applications/LeafDraw.app</code> no Terminal.</p>
+            </details>
+          </div>
+          <div class="arquivos">
+            <a class="arquivo" data-arq="macos-arm64.dmg" href="https://github.com/francisreboucas/leafdraw/releases/download/v0.1.0-rc.1/LeafDraw-0.1.0rc1-macos-arm64.dmg">Apple Silicon .dmg <span class="tam">163 MB</span></a>
+            <a class="arquivo" data-arq="macos-x86_64.dmg" href="https://github.com/francisreboucas/leafdraw/releases/download/v0.1.0-rc.1/LeafDraw-0.1.0rc1-macos-x86_64.dmg">Intel .dmg <span class="tam">168 MB</span></a>
+          </div>
+        </div>
+      </div>
+
+      <p class="baixar-nota">Confira os arquivos com o <a data-arq="SHA256SUMS.txt" href="https://github.com/francisreboucas/leafdraw/releases/download/v0.1.0-rc.1/SHA256SUMS.txt">SHA256SUMS.txt</a>. Versões anteriores e notas ficam nas <a href="https://github.com/francisreboucas/leafdraw/releases">releases</a>.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="rodape">
+  <div class="faixa rodape-grade">
+    <p>LeafDraw é software livre sob a GPLv3, feito no Brasil com Python, Qt for Python e moderngl.</p>
+    <nav aria-label="Rodapé">
+      <a href="https://github.com/francisreboucas/leafdraw">Código-fonte</a>
+      <a href="https://github.com/francisreboucas/leafdraw#readme">Documentação</a>
+      <a href="https://github.com/francisreboucas/leafdraw/blob/main/CONTRIBUTING.md">Contribuir</a>
+      <a href="https://github.com/francisreboucas/leafdraw/issues">Issues</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Linha de comando: sigla -> comando
+  var comandos = [
+    [['L', 'LINHA'], 'Linha', 'clique o primeiro ponto ou digite uma coordenada'],
+    [['PL', 'POLILINHA'], 'Polilinha', 'clique os vértices; F fecha'],
+    [['REC'], 'Retângulo', 'clique dois cantos opostos'],
+    [['C'], 'Círculo', 'clique o centro e informe o raio'],
+    [['A'], 'Arco', 'clique três pontos'],
+    [['T'], 'Texto', 'clique a posição e escreva'],
+    [['COT'], 'Cota', 'clique os dois pontos e a posição da linha de cota'],
+    [['H'], 'Hachura', 'clique dentro de uma área fechada; S D X L G P PE trocam o padrão'],
+    [['M'], 'Mover', 'ponto base e destino'],
+    [['CO'], 'Copiar', 'ponto base e destinos'],
+    [['RO'], 'Rotacionar', 'centro e ângulo'],
+    [['SC'], 'Escalar', 'ponto base e fator'],
+    [['MI'], 'Espelhar', 'dois pontos do eixo'],
+    [['O'], 'Offset', 'distância, objeto e lado'],
+    [['X'], 'Explodir', 'separa os objetos selecionados'],
+    [['E'], 'Apagar', 'exclui a seleção'],
+    [['DI'], 'Medir', 'clique dois pontos'],
+    [['TR'], 'Aparar', 'clique o trecho a remover'],
+    [['EST'], 'Estender', 'clique a ponta a prolongar'],
+    [['PLANTA'], 'Planta isolada', 'clique onde plantar a espécie escolhida'],
+    [['MAC'], 'Maciço', 'clique dentro de uma área fechada; T/Q troca a malha, um número define o espaçamento'],
+    [['LIN'], 'Plantas em linha', 'clique numa linha, polilinha, arco ou círculo'],
+    [['ETQ'], 'Rótulo', 'selecione plantas e clique onde vai o texto'],
+    [['QUANT'], 'Quantitativos', 'abre o painel com o total por espécie'],
+    [['CATALOGO'], 'Catálogo de espécies', 'crie, edite ou duplique espécies'],
+    [['CN'], 'Curva de nível', 'digite a cota e desenhe como uma polilinha'],
+    [['NV'], 'Cota de nível', 'clique o ponto e informe a cota'],
+    [['VISTA', 'VI', 'ELEV'], 'Vista (elevação)', 'dois pontos da linha de corte, o lado e onde fica o desenho'],
+    [['FOLHAS'], 'Aba Folhas', 'abre as pranchas de impressão'],
+    [['MODELO'], 'Aba Modelo', 'volta ao desenho'],
+    [['PDF'], 'PDF das folhas', 'grava as pranchas em PDF vetorial'],
+    [['PROJETO'], 'Dados do projeto', 'preenche o carimbo de todas as folhas'],
+    [['Z'], 'Zoom extensão', 'enquadra o desenho inteiro'],
+    [['U'], 'Desfazer', 'desfaz a última edição'],
+    [['IMPORTAR'], 'Importar DXF/DWG', 'escolha o arquivo e a unidade'],
+    [['EXPORTAR'], 'Exportar DXF', 'grava em metros (R2018)']
+  ];
+  var entrada = document.getElementById('cmd');
+  var resposta = document.getElementById('cmd-resposta');
+  var atalhos = document.getElementById('cmd-atalhos');
+
+  function responde(valor) {
+    var sigla = valor.trim().toUpperCase();
+    resposta.classList.remove('erro');
+    if (!sigla) { resposta.textContent = 'Digite uma sigla ou escolha uma abaixo.'; return; }
+    for (var i = 0; i < comandos.length; i++) {
+      if (comandos[i][0].indexOf(sigla) !== -1) {
+        resposta.textContent = comandos[i][1] + ': ' + comandos[i][2] + '.';
+        return;
+      }
+    }
+    resposta.classList.add('erro');
+    resposta.textContent = 'Comando desconhecido: ' + sigla + '. Tente L, MAC ou VISTA.';
+  }
+  entrada.addEventListener('input', function () { responde(entrada.value); });
+  ['L', 'PL', 'H', 'COT', 'O', 'TR', 'MAC', 'LIN', 'ETQ', 'CN', 'VISTA', 'FOLHAS', 'PDF'].forEach(function (s) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = s;
+    b.addEventListener('click', function () { entrada.value = s; responde(s); });
+    atalhos.appendChild(b);
+  });
+
+  // Sistema do visitante
+  var ua = navigator.userAgent;
+  var so = /Windows/.test(ua) ? 'windows' : /Mac OS X|Macintosh/.test(ua) ? 'macos' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : null;
+  var nomes = { windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+  if (so) {
+    var linha = document.querySelector('.sistema[data-so="' + so + '"]');
+    linha.classList.add('meu');
+    document.getElementById('baixar-principal').textContent = 'Baixar para ' + nomes[so];
+  }
+
+  // Última release: atualiza versão, data, links e tamanhos (os valores no HTML são o reserva)
+  fetch('https://api.github.com/repos/francisreboucas/leafdraw/releases?per_page=1')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (lista) {
+      var rel = lista && lista[0];
+      if (!rel || !rel.assets || !rel.assets.length) return;
+      var versao = (rel.name || rel.tag_name).replace(/^LeafDraw\s+/i, '');
+      document.querySelectorAll('[data-versao]').forEach(function (el) { el.textContent = versao; });
+      var data = new Date(rel.published_at);
+      if (!isNaN(data)) document.querySelector('[data-data]').textContent = data.toLocaleDateString('pt-BR');
+      document.querySelectorAll('[data-arq]').forEach(function (a) {
+        var sufixo = a.getAttribute('data-arq');
+        var achado = rel.assets.filter(function (x) { return x.name.slice(-sufixo.length) === sufixo; })[0];
+        if (!achado) return;
+        a.href = achado.browser_download_url;
+        var tam = a.querySelector('.tam');
+        if (tam) tam.textContent = Math.round(achado.size / 1048576) + ' MB';
+      });
+    })
+    .catch(function () {});
+})();
+</script>
+</body>
+</html>
